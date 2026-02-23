@@ -45,6 +45,17 @@
           - vault_root_token is defined and vault_root_token | length > 0
         fail_msg: "namecom_username, namecom_api_token, and vault_root_token must be provided"
 
+    # When running in AAP EE, the K8s credential injects K8S_AUTH_HOST + K8S_AUTH_API_KEY.
+    # We use those to log in with oc. When running locally, oc is already authenticated.
+    - name: "Login to OCP using injected K8s credential (AAP EE)"
+      ansible.builtin.shell: |
+        oc login "{{ lookup('env', 'K8S_AUTH_HOST') }}" \
+          --token="{{ lookup('env', 'K8S_AUTH_API_KEY') }}" \
+          --insecure-skip-tls-verify=true
+      when: lookup('env', 'K8S_AUTH_API_KEY') | length > 0
+      no_log: true
+      changed_when: false
+
     - name: "Verify oc CLI is available and authenticated"
       ansible.builtin.command: oc whoami
       register: oc_user
