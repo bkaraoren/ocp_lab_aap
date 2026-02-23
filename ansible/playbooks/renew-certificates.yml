@@ -86,19 +86,28 @@
 
     - name: "Install acme.sh (with --force for EE without cron)"
       ansible.builtin.shell: |
-        curl -sSL https://get.acme.sh | sh -s email={{ acme_email }}
-        # If install fails due to missing cron, force install
-        if [ ! -f "{{ acme_sh_path }}" ]; then
-          cd /tmp/acme.sh-master 2>/dev/null || cd "{{ ansible_env.HOME }}/.acme.sh-master" 2>/dev/null
-          ./acme.sh --install --force --home "{{ ansible_env.HOME }}/.acme.sh" --email {{ acme_email }} 2>/dev/null || true
-        fi
-        # Last resort: direct download the script
-        if [ ! -f "{{ acme_sh_path }}" ]; then
-          mkdir -p "{{ ansible_env.HOME }}/.acme.sh"
-          curl -sSL https://raw.githubusercontent.com/acmesh-official/acme.sh/master/acme.sh \
-            -o "{{ acme_sh_path }}"
-          chmod +x "{{ acme_sh_path }}"
-        fi
+        set -e
+        INSTALL_DIR="{{ ansible_env.HOME }}/.acme.sh"
+        TARBALL="/tmp/acme.sh.tar.gz"
+        EXTRACT="/tmp/acme.sh-extract"
+
+        # Download and extract the full tarball (includes DNS hooks)
+        curl -sSL https://github.com/acmesh-official/acme.sh/archive/master.tar.gz -o "${TARBALL}"
+        mkdir -p "${EXTRACT}"
+        tar xzf "${TARBALL}" -C "${EXTRACT}"
+
+        # Install with --force (bypasses cron requirement)
+        cd "${EXTRACT}"/acme.sh-master
+        ./acme.sh --install --force \
+          --home "${INSTALL_DIR}" \
+          --email {{ acme_email }} \
+          --nocron
+
+        # Cleanup
+        rm -rf "${TARBALL}" "${EXTRACT}"
+
+        # Verify
+        [ -f "${INSTALL_DIR}/acme.sh" ] && echo "✅ acme.sh installed" || exit 1
       args:
         creates: "{{ acme_sh_path }}"
       when: not acme_stat.stat.exists
