@@ -1,0 +1,13 @@
+# AAP Schedule — Run cert renewal every 60 days
+# Certificates expire in 90 days, so 60-day cycle gives a 30-day safety margin
+apiVersion: tower.ansible.com/v1alpha1
+kind: AnsibleSchedule
+metadata:
+  name: cert-renewal-60-day
+  namespace: aap
+spec:
+  connection_secret: aap-connection
+  name: "Every 60 days - Certificate Renewal"
+  unified_job_template: "Renew Let's Encrypt Certificates"
+  # RRULE: every 60 days at 02:00 UTC
+  rrule: "DTSTART:20260223T020000Z RRULE:FREQ=DAILY;INTERVAL=60"

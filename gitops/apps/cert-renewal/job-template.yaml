@@ -1,0 +1,14 @@
+# AAP Job Template — Renew Let's Encrypt Certificates
+# Runs the cert renewal playbook from the project
+apiVersion: tower.ansible.com/v1alpha1
+kind: JobTemplate
+metadata:
+  name: renew-letsencrypt-certs
+  namespace: aap
+spec:
+  connection_secret: aap-connection
+  name: "Renew Let's Encrypt Certificates"
+  description: "Renews wildcard & API certificates, updates Vault, triggers ESO sync"
+  organization: Default
+  project: "OCP Lab - Certificate Management"
+  playbook: ansible/playbooks/renew-certificates.yml
