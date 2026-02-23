@@ -1,0 +1,87 @@
+# Alertmanager configuration
+# This file is applied as a Secret in openshift-monitoring namespace.
+# Usage:
+#   oc -n openshift-monitoring create secret generic alertmanager-main \
+#     --from-file=alertmanager.yaml=alertmanager.yaml \
+#     --dry-run=client -o yaml | oc apply -f -
+#
+# NOTE: The slack_api_url must be populated from Vault:
+#   vault kv get -field=webhook_url secret/ocp/slack
+#
+global:
+  http_config:
+    proxy_from_environment: true
+  slack_api_url: "REPLACE_WITH_VAULT_SECRET_ocp_slack_webhook_url"
+inhibit_rules:
+- equal:
+  - namespace
+  - alertname
+  source_matchers:
+  - "severity = critical"
+  target_matchers:
+  - "severity =~ warning|info"
+- equal:
+  - namespace
+  - alertname
+  source_matchers:
+  - "severity = warning"
+  target_matchers:
+  - "severity = info"
+receivers:
+- name: Default
+  slack_configs:
+  - channel: "#alerts-ocp-karaoren"
+    send_resolved: true
+    icon_url: https://avatars3.githubusercontent.com/u/3380462
+    title: |-
+      [{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.alertname }}
+    text: >-
+      {{ range .Alerts -}}
+      *Alert:* {{ .Labels.alertname }} - {{ .Labels.severity | toUpper }}
+
+      *Description:* {{ .Annotations.description }}
+
+      *Details:*
+        {{ range .Labels.SortedPairs }} • *{{ .Name }}:* `{{ .Value }}`
+        {{ end }}
+      {{ end }}
+- name: Watchdog
+  slack_configs:
+  - channel: "#alerts-ocp-karaoren"
+    send_resolved: true
+    title: "Watchdog - Cluster Heartbeat"
+    text: "Cluster monitoring is active and healthy."
+- name: Critical
+  slack_configs:
+  - channel: "#alerts-ocp-karaoren"
+    send_resolved: true
+    icon_url: https://avatars3.githubusercontent.com/u/3380462
+    title: |-
+      🔴 CRITICAL [{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.alertname }}
+    text: >-
+      {{ range .Alerts -}}
+      *Alert:* {{ .Labels.alertname }} - CRITICAL
+
+      *Description:* {{ .Annotations.description }}
+
+      *Summary:* {{ .Annotations.summary }}
+
+      *Details:*
+        {{ range .Labels.SortedPairs }} • *{{ .Name }}:* `{{ .Value }}`
+        {{ end }}
+      {{ end }}
+route:
+  group_by:
+  - namespace
+  group_interval: 5m
+  group_wait: 30s
+  receiver: Default
+  repeat_interval: 12h
+  routes:
+  - matchers:
+    - "alertname = Watchdog"
+    receiver: Watchdog
+    repeat_interval: 24h
+  - matchers:
+    - "severity = critical"
+    receiver: Critical

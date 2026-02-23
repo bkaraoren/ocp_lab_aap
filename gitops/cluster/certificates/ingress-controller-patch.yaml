@@ -1,0 +1,10 @@
+# Patch the default IngressController to use the Let's Encrypt wildcard certificate
+# The letsencrypt-wildcard secret is synced from Vault via ESO
+apiVersion: operator.openshift.io/v1
+kind: IngressController
+metadata:
+  name: default
+  namespace: openshift-ingress-operator
+spec:
+  defaultCertificate:
+    name: letsencrypt-wildcard

@@ -1,0 +1,51 @@
+# Wave 11: Self-Service Automation Portal (Helm)
+# Requires: AAP running (wave 9), portal secrets in Vault (ESO wave 8)
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: portal-prereqs
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "11"
+spec:
+  project: sno-cluster
+  source:
+    repoURL: "https://github.com/YOUR_ORG/aap-ocp-karaoren.git"  # ← UPDATE
+    targetRevision: main
+    path: gitops/apps/aap-portal
+  destination:
+    server: "https://kubernetes.default.svc"
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aap-portal
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "11"
+spec:
+  project: sno-cluster
+  source:
+    repoURL: "https://charts.openshift.io/"
+    chart: redhat-rhaap-portal
+    targetRevision: 2.1.0
+    helm:
+      values: |
+        redhat-developer-hub:
+          global:
+            clusterRouterBase: apps.ocp.karaoren.eu
+            pluginMode: oci
+  destination:
+    server: "https://kubernetes.default.svc"
+    namespace: aap-portal
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

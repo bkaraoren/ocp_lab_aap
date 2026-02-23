@@ -1,0 +1,13 @@
+# Patch the API server to use Let's Encrypt certificate for api.ocp.karaoren.eu
+# The letsencrypt-api secret is synced from Vault via ESO
+apiVersion: config.openshift.io/v1
+kind: APIServer
+metadata:
+  name: cluster
+spec:
+  servingCerts:
+    namedCertificates:
+    - names:
+      - api.ocp.karaoren.eu
+      servingCertificate:
+        name: letsencrypt-api

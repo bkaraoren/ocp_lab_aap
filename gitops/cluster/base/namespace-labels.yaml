@@ -1,0 +1,26 @@
+# Namespace labels required for cluster monitoring
+# Apply monitoring label to namespaces that need Prometheus scraping
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aap
+  labels:
+    openshift.io/cluster-monitoring: "true"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vault
+  labels:
+    openshift.io/cluster-monitoring: "true"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nfs-server
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aap-portal

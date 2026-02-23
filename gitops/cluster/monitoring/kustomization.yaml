@@ -1,0 +1,8 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - cluster-monitoring-config.yaml
+
+# alertmanager.yaml is applied via the bootstrap script as a Secret
+# (cannot be managed directly by Kustomize since it needs to be wrapped in a Secret)

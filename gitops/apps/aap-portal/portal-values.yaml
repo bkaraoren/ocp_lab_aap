@@ -1,0 +1,8 @@
+# Helm values for the Self-Service Automation Portal
+# Chart: openshift-helm-charts/redhat-rhaap-portal
+# Repo: https://charts.openshift.io/
+redhat-developer-hub:
+  global:
+    clusterRouterBase: apps.ocp.karaoren.eu
+    # Use OCI mode to pull plugins directly from registry.redhat.io
+    pluginMode: oci
