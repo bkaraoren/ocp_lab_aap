@@ -1,0 +1,43 @@
+# Receptor configuration file for the execution node
+# This file should be placed at /etc/receptor/receptor.conf on the VM
+# The TLS certificates are obtained from the AAP install bundle
+---
+- node:
+    id: aap-exec-node.aap-exec.svc.cluster.local
+
+- work-verification:
+    publickey: /etc/receptor/work_public_key.pem
+
+- log-level: info
+
+- control-service:
+    service: control
+    filename: /var/run/receptor/receptor.sock
+    permissions: "0660"
+
+- tls-server:
+    name: tls_server
+    cert: /etc/receptor/tls/receptor.crt
+    key: /etc/receptor/tls/receptor.key
+    clientcas: /etc/receptor/tls/ca/mesh-CA.crt
+    requireclientcert: true
+    mintls13: false
+
+- tls-client:
+    name: tls_client
+    cert: /etc/receptor/tls/receptor.crt
+    key: /etc/receptor/tls/receptor.key
+    rootcas: /etc/receptor/tls/ca/mesh-CA.crt
+    insecureskipverify: false
+    mintls13: false
+
+- tcp-listener:
+    port: 27199
+    tls: tls_server
+
+- work-command:
+    worktype: ansible-runner
+    command: ansible-runner
+    params: worker
+    allowruntimeparams: true
+    verifysignature: true

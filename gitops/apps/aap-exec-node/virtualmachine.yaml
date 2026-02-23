@@ -1,0 +1,71 @@
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: aap-exec-node
+  namespace: aap-exec
+  labels:
+    app: aap-exec-node
+spec:
+  runStrategy: Always
+  template:
+    metadata:
+      labels:
+        app: aap-exec-node
+        kubevirt.io/domain: aap-exec-node
+    spec:
+      domain:
+        cpu:
+          cores: 4
+        memory:
+          guest: 8Gi
+        devices:
+          disks:
+            - name: rootdisk
+              disk:
+                bus: virtio
+            - name: cloudinit
+              disk:
+                bus: virtio
+          interfaces:
+            - name: default
+              masquerade: {}
+        machine:
+          type: q35
+      networks:
+        - name: default
+          pod: {}
+      volumes:
+        - name: rootdisk
+          dataVolume:
+            name: aap-exec-node-rootdisk
+        - name: cloudinit
+          cloudInitNoCloud:
+            userData: |
+              #cloud-config
+              hostname: aap-exec-node
+              user: cloud-user
+              ssh_authorized_keys:
+                - <REPLACE_WITH_SSH_PUBLIC_KEY>
+              chpasswd:
+                expire: false
+              packages:
+                - python3
+                - python3-pip
+                - podman
+              runcmd:
+                - systemctl enable --now podman.socket
+  dataVolumeTemplates:
+    - metadata:
+        name: aap-exec-node-rootdisk
+      spec:
+        pvc:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 40Gi
+          storageClassName: lvms-vm-vg1
+        source:
+          pvc:
+            namespace: openshift-virtualization-os-images
+            name: rhel9-ab4ec16077fe
