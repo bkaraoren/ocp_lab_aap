@@ -14,6 +14,7 @@
 #   ansible-playbook playbooks/generate-certs.yml -e @vars/secrets.yml
 #   ansible-playbook playbooks/store-secrets.yml  -e @vars/secrets.yml
 #   ansible-playbook playbooks/configure-aap.yml  -e @vars/secrets.yml
+#   ansible-playbook playbooks/setup-cert-renewal-job.yml -e @vars/secrets.yml
 #
 # With ansible-vault:
 #   ansible-vault encrypt vars/secrets.yml
@@ -44,3 +45,8 @@
 - name: "Phase 5 — Configure AAP Gateway"
   ansible.builtin.import_playbook: configure-aap.yml
   tags: [aap]
+
+# ─── Phase 6: Setup automated certificate renewal ───
+- name: "Phase 6 — Setup AAP Certificate Renewal Job"
+  ansible.builtin.import_playbook: setup-cert-renewal-job.yml
+  tags: [cert-renewal]

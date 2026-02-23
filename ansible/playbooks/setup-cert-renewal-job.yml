@@ -256,8 +256,8 @@
       ansible.builtin.debug:
         msg: "ID: {{ cert_jt_id }} — {{ aap_cert_jt_name }}"
 
-    # ─── 4b. Associate credential with job template ───
-    - name: "Associate credential with job template"
+    # ─── 4b. Associate custom credential with job template ───
+    - name: "Associate custom credential with job template"
       ansible.builtin.uri:
         url: "https://{{ aap_gw }}/api/controller/v2/job_templates/{{ cert_jt_id }}/credentials/"
         method: POST
@@ -271,6 +271,118 @@
         status_code: [200, 201, 204]
       register: assoc_result
       failed_when: false
+
+    # ─── 4c. Create ServiceAccount + ClusterRoleBinding for EE cluster access ───
+    - name: "Create cert-renewal ServiceAccount"
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: cert-renewal
+            namespace: "{{ aap_namespace }}"
+
+    - name: "Create cert-renewal ClusterRoleBinding"
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            name: cert-renewal-cluster-admin
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: cluster-admin
+          subjects:
+          - kind: ServiceAccount
+            name: cert-renewal
+            namespace: "{{ aap_namespace }}"
+
+    - name: "Create long-lived token for cert-renewal SA"
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: cert-renewal-token
+            namespace: "{{ aap_namespace }}"
+            annotations:
+              kubernetes.io/service-account.name: cert-renewal
+          type: kubernetes.io/service-account-token
+
+    - name: "Wait for token to be populated"
+      ansible.builtin.command: >
+        oc get secret cert-renewal-token -n {{ aap_namespace }}
+        -o jsonpath='{.data.token}'
+      register: sa_token_b64
+      retries: 10
+      delay: 3
+      until: sa_token_b64.stdout | length > 0
+      changed_when: false
+
+    - name: "Get API server URL"
+      ansible.builtin.command: oc whoami --show-server
+      register: api_server
+      changed_when: false
+
+    # ─── 4d. Create K8s credential in AAP and associate with JT ───
+    - name: "Check if K8s credential already exists"
+      ansible.builtin.uri:
+        url: "https://{{ aap_gw }}/api/controller/v2/credentials/?name={{ 'OCP Cluster - cert-renewal SA' | urlencode }}"
+        method: GET
+        user: "{{ aap_admin_user }}"
+        password: "{{ aap_pw }}"
+        force_basic_auth: true
+        validate_certs: false
+      register: k8s_cred_check
+
+    - name: "Create K8s credential for EE cluster access"
+      ansible.builtin.uri:
+        url: "https://{{ aap_gw }}/api/controller/v2/credentials/"
+        method: POST
+        user: "{{ aap_admin_user }}"
+        password: "{{ aap_pw }}"
+        force_basic_auth: true
+        validate_certs: false
+        body_format: json
+        body:
+          name: "OCP Cluster - cert-renewal SA"
+          description: "ServiceAccount token for certificate renewal (cluster-admin)"
+          organization: 1
+          credential_type: 17
+          inputs:
+            host: "{{ api_server.stdout }}"
+            bearer_token: "{{ sa_token_b64.stdout | b64decode }}"
+            verify_ssl: true
+        status_code: [200, 201]
+      register: k8s_cred_result
+      when: k8s_cred_check.json.count == 0
+      no_log: true
+
+    - name: "Get K8s credential ID"
+      ansible.builtin.set_fact:
+        k8s_cred_id: "{{ k8s_cred_result.json.id if k8s_cred_check.json.count == 0 else k8s_cred_check.json.results[0].id }}"
+
+    - name: "Associate K8s credential with job template"
+      ansible.builtin.uri:
+        url: "https://{{ aap_gw }}/api/controller/v2/job_templates/{{ cert_jt_id }}/credentials/"
+        method: POST
+        user: "{{ aap_admin_user }}"
+        password: "{{ aap_pw }}"
+        force_basic_auth: true
+        validate_certs: false
+        body_format: json
+        body:
+          id: "{{ k8s_cred_id }}"
+        status_code: [200, 201, 204]
+      failed_when: false
+
+    - name: "✅ K8s Credential"
+      ansible.builtin.debug:
+        msg: "ID: {{ k8s_cred_id }} — OCP Cluster - cert-renewal SA"
 
     # ─── 5. Create Schedule (every 60 days) ───
     - name: "Check if schedule already exists"
