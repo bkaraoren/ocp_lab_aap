@@ -84,24 +84,44 @@
         path: "{{ acme_sh_path }}"
       register: acme_stat
 
-    - name: "Install acme.sh"
+    - name: "Install acme.sh (with --force for EE without cron)"
       ansible.builtin.shell: |
         curl -sSL https://get.acme.sh | sh -s email={{ acme_email }}
+        # If install fails due to missing cron, force install
+        if [ ! -f "{{ acme_sh_path }}" ]; then
+          cd /tmp/acme.sh-master 2>/dev/null || cd "{{ ansible_env.HOME }}/.acme.sh-master" 2>/dev/null
+          ./acme.sh --install --force --home "{{ ansible_env.HOME }}/.acme.sh" --email {{ acme_email }} 2>/dev/null || true
+        fi
+        # Last resort: direct download the script
+        if [ ! -f "{{ acme_sh_path }}" ]; then
+          mkdir -p "{{ ansible_env.HOME }}/.acme.sh"
+          curl -sSL https://raw.githubusercontent.com/acmesh-official/acme.sh/master/acme.sh \
+            -o "{{ acme_sh_path }}"
+          chmod +x "{{ acme_sh_path }}"
+        fi
       args:
         creates: "{{ acme_sh_path }}"
       when: not acme_stat.stat.exists
 
     # ─── Step 2: Renew certificates ───
-    - name: "Renew Let's Encrypt certificates (DNS-01 via name.com)"
-      ansible.builtin.command: >
-        {{ acme_sh_path }} --renew --force
-        -d "{{ wildcard_domain }}"
-        -d "{{ api_domain }}"
-        --dns dns_namecom
-        --server letsencrypt
+    - name: "Check if cert state already exists in acme.sh"
+      ansible.builtin.find:
+        paths: "{{ ansible_env.HOME }}/.acme.sh"
+        file_type: directory
+        patterns: "*.apps.{{ cluster_domain }}*"
+      register: existing_cert_state
+
+    - name: "Issue or renew Let's Encrypt certificates (DNS-01 via name.com)"
+      ansible.builtin.shell: |
+        {{ acme_sh_path }} {{ '--renew --force' if existing_cert_state.files | length > 0 else '--issue' }} \
+          -d "{{ wildcard_domain }}" \
+          -d "{{ api_domain }}" \
+          --dns dns_namecom \
+          --server letsencrypt
       environment:
         Namecom_Username: "{{ namecom_username }}"
         Namecom_Token: "{{ namecom_api_token }}"
+        HOME: "{{ ansible_env.HOME }}"
       register: acme_renew
       # acme.sh returns 0 on success, 2 if cert is still valid (skip)
       failed_when: acme_renew.rc not in [0, 2]
