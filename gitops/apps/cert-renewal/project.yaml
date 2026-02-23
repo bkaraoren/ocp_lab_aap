@@ -1,0 +1,15 @@
+# AAP Project — OCP Lab Certificate Management
+# Syncs from the git repo containing the renewal playbook
+apiVersion: tower.ansible.com/v1alpha1
+kind: AnsibleProject
+metadata:
+  name: cert-management-project
+  namespace: aap
+spec:
+  connection_secret: aap-connection
+  name: "OCP Lab - Certificate Management"
+  description: "OCP Lab certificate management playbooks"
+  organization: Default
+  repo: https://github.com/bkaraoren/ocp_lab_aap.git
+  branch: main
+  scm_type: git

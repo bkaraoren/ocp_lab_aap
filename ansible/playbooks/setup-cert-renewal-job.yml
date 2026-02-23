@@ -1,0 +1,342 @@
+---
+# =============================================================================
+# Setup AAP Certificate Renewal Job Template + 60-day Schedule
+# =============================================================================
+# Creates all AAP resources needed for automated cert renewal:
+#   1. Custom Credential Type (name.com + Vault credentials)
+#   2. Credential (using the custom type)
+#   3. Project (pointing to the git repo)
+#   4. Job Template (running renew-certificates.yml)
+#   5. Schedule (every 60 days)
+#
+# Usage:
+#   cd ansible/
+#   ansible-playbook playbooks/setup-cert-renewal-job.yml \
+#     -e namecom_username=<user> \
+#     -e namecom_api_token=<token> \
+#     -e vault_root_token=<token>
+#
+# Or with secrets file:
+#   ansible-playbook playbooks/setup-cert-renewal-job.yml \
+#     -e @vars/secrets.yml --ask-vault-pass
+# =============================================================================
+- name: Setup AAP Certificate Renewal Automation
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - ../vars/main.yml
+
+  vars:
+    aap_cert_project_name: "OCP Lab - Certificate Management"
+    aap_cert_credtype_name: "Let's Encrypt Renewal Credentials"
+    aap_cert_credential_name: "LE Renewal - name.com + Vault"
+    aap_cert_jt_name: "Renew Let's Encrypt Certificates"
+    aap_cert_schedule_name: "Every 60 days - Certificate Renewal"
+
+  pre_tasks:
+    - name: "Validate required variables"
+      ansible.builtin.assert:
+        that:
+          - namecom_username is defined and namecom_username | length > 0
+          - namecom_api_token is defined and namecom_api_token | length > 0
+          - vault_root_token is defined and vault_root_token | length > 0
+        fail_msg: "namecom_username, namecom_api_token, and vault_root_token must be provided"
+
+    - name: "Get AAP Gateway route"
+      ansible.builtin.command: >
+        oc get route aap -n {{ aap_namespace }} -o jsonpath='{.spec.host}'
+      register: aap_gw_raw
+      changed_when: false
+
+    - name: "Get AAP admin password"
+      ansible.builtin.command: >
+        oc get secret aap-admin-password -n {{ aap_namespace }}
+        -o jsonpath='{.data.password}'
+      register: aap_admin_pw_b64
+      changed_when: false
+
+    - name: "Set AAP connection facts"
+      ansible.builtin.set_fact:
+        aap_gw: "{{ aap_gw_raw.stdout }}"
+        aap_pw: "{{ aap_admin_pw_b64.stdout | b64decode }}"
+
+  tasks:
+    # ─── 1. Create Custom Credential Type ───
+    - name: "Check if custom credential type already exists"
+      ansible.builtin.uri:
+        url: "https://{{ aap_gw }}/api/controller/v2/credential_types/?name={{ aap_cert_credtype_name | urlencode }}"
+        method: GET
+        user: "{{ aap_admin_user }}"
+        password: "{{ aap_pw }}"
+        force_basic_auth: true
+        validate_certs: false
+      register: credtype_check
+
+    - name: "Create custom credential type for cert renewal"
+      ansible.builtin.uri:
+        url: "https://{{ aap_gw }}/api/controller/v2/credential_types/"
+        method: POST
+        user: "{{ aap_admin_user }}"
+        password: "{{ aap_pw }}"
+        force_basic_auth: true
+        validate_certs: false
+        body_format: json
+        body:
+          name: "{{ aap_cert_credtype_name }}"
+          description: "Credentials for Let's Encrypt certificate renewal via name.com DNS and Vault"
+          kind: "cloud"
+          inputs:
+            fields:
+              - id: namecom_username
+                type: string
+                label: "name.com Username"
+              - id: namecom_api_token
+                type: string
+                label: "name.com API Token"
+                secret: true
+              - id: vault_root_token
+                type: string
+                label: "Vault Root Token"
+                secret: true
+            required:
+              - namecom_username
+              - namecom_api_token
+              - vault_root_token
+          injectors:
+            extra_vars:
+              namecom_username: "{%raw%}{{ namecom_username }}{%endraw%}"
+              namecom_api_token: "{%raw%}{{ namecom_api_token }}{%endraw%}"
+              vault_root_token: "{%raw%}{{ vault_root_token }}{%endraw%}"
+        status_code: [200, 201]
+      register: credtype_result
+      when: credtype_check.json.count == 0
+
+    - name: "Get credential type ID"
+      ansible.builtin.set_fact:
+        cert_credtype_id: "{{ credtype_result.json.id if credtype_check.json.count == 0 else credtype_check.json.results[0].id }}"
+
+    - name: "✅ Custom credential type"
+      ansible.builtin.debug:
+        msg: "ID: {{ cert_credtype_id }} — {{ aap_cert_credtype_name }}"
+
+    # ─── 2. Create Credential ───
+    - name: "Check if credential already exists"
+      ansible.builtin.uri:
+        url: "https://{{ aap_gw }}/api/controller/v2/credentials/?name={{ aap_cert_credential_name | urlencode }}"
+        method: GET
+        user: "{{ aap_admin_user }}"
+        password: "{{ aap_pw }}"
+        force_basic_auth: true
+        validate_certs: false
+      register: cred_check
+
+    - name: "Create credential for cert renewal"
+      ansible.builtin.uri:
+        url: "https://{{ aap_gw }}/api/controller/v2/credentials/"
+        method: POST
+        user: "{{ aap_admin_user }}"
+        password: "{{ aap_pw }}"
+        force_basic_auth: true
+        validate_certs: false
+        body_format: json
+        body:
+          name: "{{ aap_cert_credential_name }}"
+          description: "name.com DNS API + Vault token for certificate renewal"
+          organization: 1
+          credential_type: "{{ cert_credtype_id }}"
+          inputs:
+            namecom_username: "{{ namecom_username }}"
+            namecom_api_token: "{{ namecom_api_token }}"
+            vault_root_token: "{{ vault_root_token }}"
+        status_code: [200, 201]
+      register: cred_result
+      when: cred_check.json.count == 0
+      no_log: true
+
+    - name: "Get credential ID"
+      ansible.builtin.set_fact:
+        cert_cred_id: "{{ cred_result.json.id if cred_check.json.count == 0 else cred_check.json.results[0].id }}"
+
+    - name: "✅ Credential"
+      ansible.builtin.debug:
+        msg: "ID: {{ cert_cred_id }} — {{ aap_cert_credential_name }}"
+
+    # ─── 3. Create Project ───
+    - name: "Check if project already exists"
+      ansible.builtin.uri:
+        url: "https://{{ aap_gw }}/api/controller/v2/projects/?name={{ aap_cert_project_name | urlencode }}"
+        method: GET
+        user: "{{ aap_admin_user }}"
+        password: "{{ aap_pw }}"
+        force_basic_auth: true
+        validate_certs: false
+      register: proj_check
+
+    - name: "Create project pointing to git repo"
+      ansible.builtin.uri:
+        url: "https://{{ aap_gw }}/api/controller/v2/projects/"
+        method: POST
+        user: "{{ aap_admin_user }}"
+        password: "{{ aap_pw }}"
+        force_basic_auth: true
+        validate_certs: false
+        body_format: json
+        body:
+          name: "{{ aap_cert_project_name }}"
+          description: "OCP Lab certificate management playbooks"
+          organization: 1
+          scm_type: "git"
+          scm_url: "{{ git_repo_url }}"
+          scm_branch: "{{ git_repo_branch }}"
+          scm_update_on_launch: true
+        status_code: [200, 201]
+      register: proj_result
+      when: proj_check.json.count == 0
+
+    - name: "Get project ID"
+      ansible.builtin.set_fact:
+        cert_project_id: "{{ proj_result.json.id if proj_check.json.count == 0 else proj_check.json.results[0].id }}"
+
+    - name: "✅ Project"
+      ansible.builtin.debug:
+        msg: "ID: {{ cert_project_id }} — {{ aap_cert_project_name }}"
+
+    - name: "Wait for project sync to complete"
+      ansible.builtin.uri:
+        url: "https://{{ aap_gw }}/api/controller/v2/projects/{{ cert_project_id }}/"
+        method: GET
+        user: "{{ aap_admin_user }}"
+        password: "{{ aap_pw }}"
+        force_basic_auth: true
+        validate_certs: false
+      register: proj_status
+      retries: 30
+      delay: 10
+      until: proj_status.json.status in ['successful', 'ok']
+      when: proj_check.json.count == 0
+
+    # ─── 4. Create Job Template ───
+    - name: "Check if job template already exists"
+      ansible.builtin.uri:
+        url: "https://{{ aap_gw }}/api/controller/v2/job_templates/?name={{ aap_cert_jt_name | urlencode }}"
+        method: GET
+        user: "{{ aap_admin_user }}"
+        password: "{{ aap_pw }}"
+        force_basic_auth: true
+        validate_certs: false
+      register: jt_check
+
+    - name: "Create job template for cert renewal"
+      ansible.builtin.uri:
+        url: "https://{{ aap_gw }}/api/controller/v2/job_templates/"
+        method: POST
+        user: "{{ aap_admin_user }}"
+        password: "{{ aap_pw }}"
+        force_basic_auth: true
+        validate_certs: false
+        body_format: json
+        body:
+          name: "{{ aap_cert_jt_name }}"
+          description: "Renews Let's Encrypt wildcard & API certificates, updates Vault, triggers ESO sync"
+          organization: 1
+          project: "{{ cert_project_id }}"
+          playbook: "ansible/playbooks/renew-certificates.yml"
+          execution_environment: 2
+          verbosity: 1
+          ask_variables_on_launch: false
+        status_code: [200, 201]
+      register: jt_result
+      when: jt_check.json.count == 0
+
+    - name: "Get job template ID"
+      ansible.builtin.set_fact:
+        cert_jt_id: "{{ jt_result.json.id if jt_check.json.count == 0 else jt_check.json.results[0].id }}"
+
+    - name: "✅ Job Template"
+      ansible.builtin.debug:
+        msg: "ID: {{ cert_jt_id }} — {{ aap_cert_jt_name }}"
+
+    # ─── 4b. Associate credential with job template ───
+    - name: "Associate credential with job template"
+      ansible.builtin.uri:
+        url: "https://{{ aap_gw }}/api/controller/v2/job_templates/{{ cert_jt_id }}/credentials/"
+        method: POST
+        user: "{{ aap_admin_user }}"
+        password: "{{ aap_pw }}"
+        force_basic_auth: true
+        validate_certs: false
+        body_format: json
+        body:
+          id: "{{ cert_cred_id }}"
+        status_code: [200, 201, 204]
+      register: assoc_result
+      failed_when: false
+
+    # ─── 5. Create Schedule (every 60 days) ───
+    - name: "Check if schedule already exists"
+      ansible.builtin.uri:
+        url: "https://{{ aap_gw }}/api/controller/v2/schedules/?name={{ aap_cert_schedule_name | urlencode }}"
+        method: GET
+        user: "{{ aap_admin_user }}"
+        password: "{{ aap_pw }}"
+        force_basic_auth: true
+        validate_certs: false
+      register: sched_check
+
+    - name: "Create 60-day schedule for cert renewal"
+      ansible.builtin.uri:
+        url: "https://{{ aap_gw }}/api/controller/v2/job_templates/{{ cert_jt_id }}/schedules/"
+        method: POST
+        user: "{{ aap_admin_user }}"
+        password: "{{ aap_pw }}"
+        force_basic_auth: true
+        validate_certs: false
+        body_format: json
+        body:
+          name: "{{ aap_cert_schedule_name }}"
+          description: "Runs certificate renewal every 60 days (certs expire in 90 days)"
+          enabled: true
+          # RRULE: every 60 days, starting from today, at 02:00 UTC
+          rrule: "DTSTART:{{ ansible_date_time.date | default(lookup('pipe','date +%Y%m%d')) | regex_replace('-','') }}T020000Z RRULE:FREQ=DAILY;INTERVAL=60"
+        status_code: [200, 201]
+      register: sched_result
+      when: sched_check.json.count == 0
+
+    - name: "Get schedule ID"
+      ansible.builtin.set_fact:
+        cert_schedule_id: "{{ sched_result.json.id if sched_check.json.count == 0 else sched_check.json.results[0].id }}"
+
+    - name: "✅ Schedule"
+      ansible.builtin.debug:
+        msg: "ID: {{ cert_schedule_id }} — {{ aap_cert_schedule_name }}"
+
+    # ─── Summary ───
+    - name: "Setup complete"
+      ansible.builtin.debug:
+        msg: |
+          ============================================================
+          ✅ Certificate Renewal Automation Setup Complete!
+          ============================================================
+
+          AAP Resources Created:
+            ┌─────────────────┬──────────────────────────────────────────────┐
+            │ Resource        │ Name                                         │
+            ├─────────────────┼──────────────────────────────────────────────┤
+            │ Credential Type │ {{ aap_cert_credtype_name }}
+            │ Credential      │ {{ aap_cert_credential_name }}
+            │ Project         │ {{ aap_cert_project_name }}
+            │ Job Template    │ {{ aap_cert_jt_name }}
+            │ Schedule        │ {{ aap_cert_schedule_name }}
+            └─────────────────┴──────────────────────────────────────────────┘
+
+          Schedule:
+            Every 60 days at 02:00 UTC
+            Certificates expire after 90 days → 30-day safety margin
+
+          Flow:
+            Schedule triggers → Job Template runs → renew-certificates.yml
+            → acme.sh renews certs → updates Vault → ESO syncs to OCP
+
+          To run manually:
+            AAP UI → Templates → "{{ aap_cert_jt_name }}" → Launch
+          ============================================================

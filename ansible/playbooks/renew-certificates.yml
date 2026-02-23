@@ -1,0 +1,210 @@
+---
+# =============================================================================
+# Let's Encrypt Certificate Renewal Playbook
+# =============================================================================
+# Renews wildcard TLS certificates, updates Vault, and triggers ESO refresh.
+#
+# This playbook is designed to run BOTH locally and in AAP (via Job Template).
+#
+# Flow:
+#   1. Install acme.sh (if missing)
+#   2. Renew certificates via DNS-01 challenge (name.com)
+#   3. Update certificates in Vault (secret/letsencrypt/certs)
+#   4. Force ESO to re-sync the secrets to OCP
+#   5. Verify new certificates are active
+#
+# Local usage:
+#   cd ansible/
+#   ansible-playbook playbooks/renew-certificates.yml \
+#     -e namecom_username=<user> \
+#     -e namecom_api_token=<token> \
+#     -e vault_root_token=<token>
+#
+# AAP usage:
+#   Scheduled via JobTemplate + AnsibleSchedule (every 60 days)
+# =============================================================================
+- name: Renew Let's Encrypt Certificates
+  hosts: localhost
+  gather_facts: true
+  vars_files:
+    - ../vars/main.yml
+
+  vars:
+    acme_sh_path: "{{ ansible_env.HOME }}/.acme.sh/acme.sh"
+    wildcard_domain: "*.apps.{{ cluster_domain }}"
+    api_domain: "api.{{ cluster_domain }}"
+    vault_cmd: "oc exec -n {{ vault_namespace }} {{ vault_pod }} -- sh -c"
+    vt: "{{ vault_root_token }}"
+
+  pre_tasks:
+    - name: "Validate required variables"
+      ansible.builtin.assert:
+        that:
+          - namecom_username is defined and namecom_username | length > 0
+          - namecom_api_token is defined and namecom_api_token | length > 0
+          - vault_root_token is defined and vault_root_token | length > 0
+        fail_msg: "namecom_username, namecom_api_token, and vault_root_token must be provided"
+
+    - name: "Verify oc CLI is available and authenticated"
+      ansible.builtin.command: oc whoami
+      register: oc_user
+      changed_when: false
+
+    - name: "Check current certificate expiry"
+      ansible.builtin.shell: |
+        oc get secret letsencrypt-wildcard -n openshift-ingress \
+          -o jsonpath='{.data.tls\.crt}' | \
+          base64 -d | openssl x509 -noout -enddate 2>/dev/null | \
+          sed 's/notAfter=//'
+      register: current_expiry
+      changed_when: false
+      failed_when: false
+
+    - name: "Current certificate status"
+      ansible.builtin.debug:
+        msg: |
+          Logged in as: {{ oc_user.stdout }}
+          Current cert expires: {{ current_expiry.stdout | default('UNKNOWN') }}
+
+  tasks:
+    # ─── Step 1: Install acme.sh if not present ───
+    - name: "Check if acme.sh is installed"
+      ansible.builtin.stat:
+        path: "{{ acme_sh_path }}"
+      register: acme_stat
+
+    - name: "Install acme.sh"
+      ansible.builtin.shell: |
+        curl -sSL https://get.acme.sh | sh -s email={{ acme_email }}
+      args:
+        creates: "{{ acme_sh_path }}"
+      when: not acme_stat.stat.exists
+
+    # ─── Step 2: Renew certificates ───
+    - name: "Renew Let's Encrypt certificates (DNS-01 via name.com)"
+      ansible.builtin.command: >
+        {{ acme_sh_path }} --renew --force
+        -d "{{ wildcard_domain }}"
+        -d "{{ api_domain }}"
+        --dns dns_namecom
+        --server letsencrypt
+      environment:
+        Namecom_Username: "{{ namecom_username }}"
+        Namecom_Token: "{{ namecom_api_token }}"
+      register: acme_renew
+      # acme.sh returns 0 on success, 2 if cert is still valid (skip)
+      failed_when: acme_renew.rc not in [0, 2]
+      changed_when: acme_renew.rc == 0
+
+    - name: "Certificate renewal result"
+      ansible.builtin.debug:
+        msg: "{{ 'Renewed' if acme_renew.rc == 0 else 'Skipped (still valid)' }}"
+
+    # ─── Step 3: Read new certificate files ───
+    - name: "Find acme.sh cert directory"
+      ansible.builtin.find:
+        paths: "{{ ansible_env.HOME }}/.acme.sh"
+        file_type: directory
+        patterns: "*.apps.{{ cluster_domain }}_ecc"
+      register: cert_dir_search
+      failed_when: cert_dir_search.files | length == 0
+
+    - name: "Set cert directory path"
+      ansible.builtin.set_fact:
+        cert_dir: "{{ cert_dir_search.files[0].path }}"
+
+    - name: "Find private key"
+      ansible.builtin.find:
+        paths: "{{ cert_dir }}"
+        patterns: "*.key"
+      register: key_files
+
+    - name: "Read private key"
+      ansible.builtin.slurp:
+        src: "{{ key_files.files[0].path }}"
+      register: tls_key
+
+    - name: "Read fullchain certificate"
+      ansible.builtin.slurp:
+        src: "{{ cert_dir }}/fullchain.cer"
+      register: tls_chain
+
+    - name: "Read CA certificate"
+      ansible.builtin.slurp:
+        src: "{{ cert_dir }}/ca.cer"
+      register: tls_ca
+
+    - name: "Verify renewed certificate"
+      ansible.builtin.shell: |
+        openssl x509 -in "{{ cert_dir }}/fullchain.cer" -noout -dates -subject
+      register: new_cert_info
+      changed_when: false
+
+    - name: "New certificate details"
+      ansible.builtin.debug:
+        msg: "{{ new_cert_info.stdout }}"
+
+    # ─── Step 4: Update certificates in Vault ───
+    - name: "Update certificates in Vault (secret/letsencrypt/certs)"
+      ansible.builtin.shell: |
+        {{ vault_cmd }} "VAULT_TOKEN='{{ vt }}' vault kv put secret/letsencrypt/certs \
+          domain='{{ wildcard_domain }}' \
+          alt_domain='{{ api_domain }}' \
+          private_key_b64='{{ tls_key.content }}' \
+          fullchain_b64='{{ tls_chain.content }}' \
+          ca_b64='{{ tls_ca.content }}' \
+          renewed_at='$(date -u +%Y-%m-%dT%H:%M:%SZ)'"
+      changed_when: true
+      no_log: true
+
+    - name: "✅ Certificates updated in Vault"
+      ansible.builtin.debug:
+        msg: "secret/letsencrypt/certs updated"
+
+    # ─── Step 5: Force ESO to re-sync secrets ───
+    - name: "Annotate ExternalSecrets to force immediate refresh"
+      ansible.builtin.shell: |
+        oc annotate externalsecret letsencrypt-wildcard -n openshift-ingress \
+          force-sync="{{ ansible_date_time.iso8601 }}" --overwrite
+        oc annotate externalsecret letsencrypt-api -n openshift-config \
+          force-sync="{{ ansible_date_time.iso8601 }}" --overwrite
+      changed_when: true
+
+    - name: "Wait for ESO to sync (30 seconds)"
+      ansible.builtin.pause:
+        seconds: 30
+
+    # ─── Step 6: Verify new certificates are active in OCP ───
+    - name: "Verify wildcard cert in openshift-ingress"
+      ansible.builtin.shell: |
+        oc get secret letsencrypt-wildcard -n openshift-ingress \
+          -o jsonpath='{.data.tls\.crt}' | \
+          base64 -d | openssl x509 -noout -dates -subject
+      register: verify_wildcard
+      changed_when: false
+
+    - name: "Verify API cert in openshift-config"
+      ansible.builtin.shell: |
+        oc get secret letsencrypt-api -n openshift-config \
+          -o jsonpath='{.data.tls\.crt}' | \
+          base64 -d | openssl x509 -noout -dates -subject
+      register: verify_api
+      changed_when: false
+
+    - name: "Certificate renewal complete"
+      ansible.builtin.debug:
+        msg: |
+          ============================================
+          ✅ Certificate Renewal Complete!
+          ============================================
+
+          Previous expiry : {{ current_expiry.stdout | default('UNKNOWN') }}
+
+          Wildcard cert   : {{ verify_wildcard.stdout }}
+          API cert        : {{ verify_api.stdout }}
+
+          Vault path      : secret/letsencrypt/certs
+          ESO refresh     : Triggered (1h auto-sync + force annotation)
+
+          Next renewal in : 60 days (AAP scheduled job)
+          ============================================
