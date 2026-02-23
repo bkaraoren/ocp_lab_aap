@@ -1,0 +1,22 @@
+# Wave 1: Namespaces and cluster base configuration
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cluster-base
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: sno-cluster
+  source:
+    repoURL: "https://github.com/YOUR_ORG/aap-ocp-karaoren.git"  # ← UPDATE
+    targetRevision: main
+    path: gitops/cluster/base
+  destination:
+    server: "https://kubernetes.default.svc"
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

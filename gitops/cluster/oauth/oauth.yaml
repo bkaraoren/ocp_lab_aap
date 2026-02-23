@@ -1,0 +1,26 @@
+# OpenShift OAuth Configuration
+# NOTE: This is a cluster-scoped resource — ArgoCD must have cluster-admin privileges
+# Secrets (clientSecret references) must exist in openshift-config namespace before applying
+apiVersion: config.openshift.io/v1
+kind: OAuth
+metadata:
+  name: cluster
+spec:
+  identityProviders:
+  - name: github
+    type: GitHub
+    mappingMethod: claim
+    github:
+      clientID: Ov23liZJ6JiMGlAX9Z06
+      clientSecret:
+        name: github-client-secret
+      teams:
+      - redhat-cop/rhis-code-admins
+  - name: RedHatSSO
+    type: Google
+    mappingMethod: claim
+    google:
+      clientID: 775961166307-rio3vds58fl05idalb7c7tbpqjr64vqi.apps.googleusercontent.com
+      clientSecret:
+        name: google-client-secret
+      hostedDomain: redhat.com

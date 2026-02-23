@@ -1,0 +1,13 @@
+# OAuthClient for AAP Gateway integration with OpenShift SSO
+# The secret value must match what is configured in the AAP Gateway authenticator
+apiVersion: oauth.openshift.io/v1
+kind: OAuthClient
+metadata:
+  name: aap-gateway
+grantMethod: auto
+secret: "REPLACE_WITH_VAULT_SECRET_ocp_aap-gateway-oauth_client_secret"
+redirectURIs:
+  - https://aap-aap.apps.ocp.karaoren.eu/api/gateway/v1/sso/complete/openshift/
+  - https://aap-aap.apps.ocp.karaoren.eu/api/gateway/v1/sso/complete/oidc/
+  - https://aap-aap.apps.ocp.karaoren.eu/sso/complete/openshift/
+  - https://aap-aap.apps.ocp.karaoren.eu/sso/complete/oidc/

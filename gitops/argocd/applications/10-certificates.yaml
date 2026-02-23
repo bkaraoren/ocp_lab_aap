@@ -1,0 +1,21 @@
+# Wave 10: TLS certificate configuration (IngressController + APIServer)
+# Requires: letsencrypt-wildcard and letsencrypt-api secrets exist (from ESO wave 8)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cluster-certificates
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  project: sno-cluster
+  source:
+    repoURL: "https://github.com/YOUR_ORG/aap-ocp-karaoren.git"  # ← UPDATE
+    targetRevision: main
+    path: gitops/cluster/certificates
+  destination:
+    server: "https://kubernetes.default.svc"
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true

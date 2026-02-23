@@ -1,0 +1,7 @@
+# VolumeSnapshotClass for NFS CSI — enables smart cloning for CNV
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshotClass
+metadata:
+  name: nfs-csi
+driver: nfs.csi.k8s.io
+deletionPolicy: Delete

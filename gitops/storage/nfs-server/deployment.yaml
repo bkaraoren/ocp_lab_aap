@@ -1,0 +1,83 @@
+# NFS Server deployment on SNO
+# Provides RWX (ReadWriteMany) storage backed by LVM
+# Requires: oc adm policy add-scc-to-user privileged -z nfs-server -n nfs-server
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nfs-server
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nfs-server
+  namespace: nfs-server
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nfs-backing-storage
+  namespace: nfs-server
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: lvms-vm-vg1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nfs-server
+  namespace: nfs-server
+  labels:
+    app: nfs-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nfs-server
+  template:
+    metadata:
+      labels:
+        app: nfs-server
+    spec:
+      serviceAccountName: nfs-server
+      containers:
+        - name: nfs-server
+          image: registry.k8s.io/volume-nfs:0.8
+          securityContext:
+            privileged: true
+          ports:
+            - name: nfs
+              containerPort: 2049
+            - name: mountd
+              containerPort: 20048
+            - name: rpcbind
+              containerPort: 111
+          volumeMounts:
+            - name: nfs-volume
+              mountPath: /exports
+      volumes:
+        - name: nfs-volume
+          persistentVolumeClaim:
+            claimName: nfs-backing-storage
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nfs-server
+  namespace: nfs-server
+  labels:
+    app: nfs-server
+spec:
+  selector:
+    app: nfs-server
+  ports:
+    - name: nfs
+      port: 2049
+    - name: mountd
+      port: 20048
+    - name: rpcbind
+      port: 111

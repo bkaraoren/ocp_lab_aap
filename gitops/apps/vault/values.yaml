@@ -1,0 +1,18 @@
+# Helm values for HashiCorp Vault CE on SNO
+# Chart: hashicorp/vault
+# Repo: https://helm.releases.hashicorp.com
+#
+# Key SNO adaptations:
+#   - Pod anti-affinity disabled (single node)
+#   - Single replica for both server and injector
+server:
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution: []
+  replicas: 1
+
+injector:
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution: []
+  replicas: 1

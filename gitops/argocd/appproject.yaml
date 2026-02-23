@@ -1,0 +1,22 @@
+# ArgoCD AppProject for the SNO cluster
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: sno-cluster
+  namespace: openshift-gitops
+spec:
+  description: "OCP SNO Cluster - AAP, Vault, ESO, and supporting infrastructure"
+  sourceRepos:
+    - "https://github.com/YOUR_ORG/aap-ocp-karaoren.git"  # ← UPDATE with your Git repo URL
+    - "https://helm.releases.hashicorp.com"
+    - "https://charts.openshift.io/"
+    - "https://raw.githubusercontent.com/kubernetes-csi/csi-driver-nfs/master/charts"
+  destinations:
+    - namespace: "*"
+      server: "https://kubernetes.default.svc"
+  clusterResourceWhitelist:
+    - group: "*"
+      kind: "*"
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"

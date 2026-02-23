@@ -1,0 +1,18 @@
+# NFS CSI StorageClass — provides RWX storage for CNV and AAP Hub
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: nfs-csi
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"
+    storageclass.kubevirt.io/is-default-virt-class: "true"
+provisioner: nfs.csi.k8s.io
+parameters:
+  server: nfs-server.nfs-server.svc.cluster.local
+  share: /
+  subDir: ${pvc.metadata.namespace}-${pvc.metadata.name}
+mountOptions:
+  - nfsvers=4.1
+  - hard
+reclaimPolicy: Delete
+volumeBindingMode: Immediate

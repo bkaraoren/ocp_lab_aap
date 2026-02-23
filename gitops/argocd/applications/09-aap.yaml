@@ -1,0 +1,21 @@
+# Wave 9: AAP instance deployment
+# Requires: AAP operator installed (wave 2), NFS storage ready (wave 4)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aap-instance
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "9"
+spec:
+  project: sno-cluster
+  source:
+    repoURL: "https://github.com/YOUR_ORG/aap-ocp-karaoren.git"  # ← UPDATE
+    targetRevision: main
+    path: gitops/apps/aap-instance
+  destination:
+    server: "https://kubernetes.default.svc"
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true

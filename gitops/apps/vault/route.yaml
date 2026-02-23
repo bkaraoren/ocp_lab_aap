@@ -1,0 +1,16 @@
+# Edge-terminated route for Vault UI
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: vault
+  namespace: vault
+spec:
+  host: vault.apps.ocp.karaoren.eu
+  to:
+    kind: Service
+    name: vault
+  port:
+    targetPort: 8200
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

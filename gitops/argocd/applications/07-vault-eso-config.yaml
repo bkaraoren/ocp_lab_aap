@@ -1,0 +1,21 @@
+# Wave 7: Vault ↔ ESO integration (ClusterSecretStore + NetworkPolicy)
+# Requires: Vault is running + configured, ESO operator is installed
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vault-eso-config
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "7"
+spec:
+  project: sno-cluster
+  source:
+    repoURL: "https://github.com/YOUR_ORG/aap-ocp-karaoren.git"  # ← UPDATE
+    targetRevision: main
+    path: gitops/secrets/vault-config
+  destination:
+    server: "https://kubernetes.default.svc"
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
