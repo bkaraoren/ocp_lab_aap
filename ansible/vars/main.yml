@@ -1,0 +1,73 @@
+# =============================================================================
+# OCP SNO Cluster — Ansible Variables
+# =============================================================================
+# Sensitive values should be passed via ansible-vault encrypted file,
+# environment variables, or --extra-vars at runtime.
+#
+# Usage:
+#   ansible-playbook -e @vars/secrets.yml playbooks/site.yml
+#   or
+#   ansible-playbook -e "vault_root_token=hvs.xxx google_client_secret=xxx" playbooks/site.yml
+# =============================================================================
+
+# ─── Cluster ───
+cluster_domain: ocp.karaoren.eu
+cluster_apps_domain: "apps.{{ cluster_domain }}"
+cluster_api_host: "api.{{ cluster_domain }}"
+
+# ─── Git Repo (for ArgoCD) ───
+git_repo_url: "https://github.com/bkaraoren/ocp_lab_aap.git"
+git_repo_branch: main
+
+# ─── Namespaces ───
+vault_namespace: vault
+aap_namespace: aap
+aap_portal_namespace: aap-portal
+nfs_namespace: nfs-server
+eso_namespace: external-secrets
+gitops_namespace: openshift-gitops
+
+# ─── GitOps directory (relative to repo root) ───
+gitops_dir: "{{ playbook_dir }}/../gitops"
+
+# ─── OAuth ───
+google_client_id: "775961166307-rio3vds58fl05idalb7c7tbpqjr64vqi.apps.googleusercontent.com"
+# google_client_secret: SET VIA SECRETS FILE OR --extra-vars
+
+github_client_id: "Ov23liZJ6JiMGlAX9Z06"
+# github_client_secret: SET VIA SECRETS FILE OR --extra-vars
+
+# ─── Vault ───
+vault_pod: vault-0
+# vault_root_token: SET VIA SECRETS FILE OR --extra-vars
+# vault_unseal_key: SET VIA SECRETS FILE OR --extra-vars
+
+# ─── AAP ───
+aap_admin_user: admin
+aap_superuser_email: bkaraore@redhat.com
+aap_google_hosted_domain: redhat.com
+
+# ─── Portal ───
+portal_helm_chart: openshift-helm-charts/redhat-rhaap-portal
+portal_helm_version: "2.1.0"
+portal_route_host: "rhaap-portal-{{ aap_portal_namespace }}.{{ cluster_apps_domain }}"
+
+# ─── Slack ───
+slack_channel: "#alerts-ocp-karaoren"
+# slack_webhook_url: SET VIA SECRETS FILE OR --extra-vars
+
+# ─── Let's Encrypt / name.com ───
+acme_email: bkaraore@redhat.com
+cert_domains:
+  - "*.{{ cluster_apps_domain }}"
+  - "{{ cluster_api_host }}"
+# namecom_username: SET VIA SECRETS FILE OR --extra-vars
+# namecom_api_token: SET VIA SECRETS FILE OR --extra-vars
+
+# ─── NFS ───
+nfs_backing_storage_size: 100Gi
+nfs_backing_storage_class: lvms-vm-vg1
+
+# ─── Timeouts ───
+operator_install_timeout: 600
+aap_deploy_timeout: 900
