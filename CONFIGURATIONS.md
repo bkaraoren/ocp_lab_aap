@@ -23,6 +23,7 @@
 13. [GitOps Deployment](#13-gitops-deployment)
 14. [Ansible Playbooks (Alternative to Shell Scripts)](#14-ansible-playbooks-alternative-to-shell-scripts)
 15. [Automated Certificate Renewal (AAP Scheduled Job)](#15-automated-certificate-renewal-aap-scheduled-job)
+16. [AAP Execution Node (RHEL 9 VM)](#16-aap-execution-node-rhel-9-vm)
 
 ---
 
@@ -1367,7 +1368,9 @@ gitops/
 ├── apps/                             # Application deployments
 │   ├── vault/                        # Vault Helm values + config scripts
 │   ├── aap-instance/                 # AAP CR + config script
-│   └── aap-portal/                   # Portal Helm values
+│   ├── aap-portal/                   # Portal Helm values
+│   ├── aap-exec-node/               # Execution node VM + services + config
+│   └── cert-renewal/                 # Certificate renewal AAP resources
 ├── secrets/                          # Secret management
 │   ├── vault-config/                 # ClusterSecretStore + NetworkPolicy
 │   └── external-secrets/             # ExternalSecret resources
@@ -1471,7 +1474,8 @@ ansible/
     ├── store-secrets.yml          # Phase 4: Populate Vault with all secrets
     ├── configure-aap.yml          # Phase 5: AAP authenticator, OAuth app, portal token
     ├── setup-cert-renewal-job.yml # Phase 6: AAP cert renewal JT + schedule + K8s credential
-    └── renew-certificates.yml     # Cert renewal (runs in AAP scheduled job or manually)
+    ├── renew-certificates.yml     # Cert renewal (runs in AAP scheduled job or manually)
+    └── configure-exec-node.yml    # Phase 7: RHEL 9 VM as AAP execution node
 ```
 
 ### 14.2 Shell → Ansible Mapping
@@ -1550,6 +1554,9 @@ ansible-playbook playbooks/configure-aap.yml \
 ansible-playbook playbooks/setup-cert-renewal-job.yml \
   -e @vars/secrets.yml --ask-vault-pass
 
+# Phase 7: Configure AAP Execution Node (RHEL 9 VM)
+ansible-playbook playbooks/configure-exec-node.yml
+
 # ── Run with tags (selective execution) ──
 ansible-playbook playbooks/site.yml -e @vars/secrets.yml --ask-vault-pass \
   --tags vault,secrets
@@ -1565,7 +1572,7 @@ ansible-playbook playbooks/site.yml -e @vars/secrets.yml --ask-vault-pass \
 | **Error handling** | `set -euo pipefail` | Per-task `failed_when`, `retries`, `until` |
 | **K8s resources** | `oc apply -f` | `kubernetes.core.k8s` module (native) |
 | **Variables** | Env vars, hardcoded | Centralized `vars/main.yml` + vault-encrypted secrets |
-| **Selective runs** | Not supported | Tags: `--tags bootstrap,vault,certs,secrets,aap,cert-renewal` |
+| **Selective runs** | Not supported | Tags: `--tags bootstrap,vault,certs,secrets,aap,cert-renewal,exec-node` |
 | **Reusability** | Copy/paste | `import_playbook`, roles-ready structure |
 
 ---
@@ -1756,6 +1763,384 @@ Verified:
 2. **EE has no kubeconfig** — K8s credential (type 17) injects `K8S_AUTH_HOST`/`K8S_AUTH_API_KEY`; playbook uses `oc login` with these
 3. **First run uses `--issue`** — subsequent runs use `--renew --force`; playbook auto-detects
 4. **DNS hooks must be included** — downloading the full tarball (not just `acme.sh` script) is required for `dns_namecom` support
+
+---
+
+## 16. AAP Execution Node (RHEL 9 VM)
+
+A RHEL 9 virtual machine is provisioned on OpenShift Virtualization and configured as an external execution node for the AAP controller. This allows AAP to run Ansible jobs on a dedicated VM outside the OCP pod-based execution environment.
+
+### 16.1 Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│                   OCP Cluster (SNO)                  │
+│                                                      │
+│  ┌──────────────────┐    ┌────────────────────────┐ │
+│  │   AAP Controller  │    │  aap-exec namespace     │ │
+│  │   (aap namespace)  │    │  ┌──────────────────┐  │ │
+│  │                    │    │  │ RHEL 9 VM         │  │ │
+│  │  receptor (ctrl)  ├──TCP──►│  receptor (exec)  │  │ │
+│  │  port: varies     │:27199│  │  port: 27199     │  │ │
+│  │                    │    │  │  ansible-runner   │  │ │
+│  │  TLS mutual auth  │    │  │  podman            │  │ │
+│  └──────────────────┘    │  └──────────────────┘  │ │
+│                          │                         │ │
+│                          │  Service: aap-exec-node │ │
+│                          │  ClusterIP:27199        │ │
+│                          └────────────────────────┘ │
+└─────────────────────────────────────────────────────┘
+```
+
+### 16.2 VM Specifications
+
+| Property | Value |
+|----------|-------|
+| **Name** | `aap-exec-node` |
+| **Namespace** | `aap-exec` |
+| **OS** | Red Hat Enterprise Linux 9.7 (Plow) |
+| **vCPUs** | 4 |
+| **RAM** | 8 GiB |
+| **Disk** | 40 GiB (LVMS `lvms-vm-vg1`) |
+| **Boot Source** | `rhel9` DataSource (auto-cloned from `openshift-virtualization-os-images`) |
+| **Network** | Masquerade (pod network) |
+| **Cloud-init** | SSH key, hostname, podman |
+
+### 16.3 Namespace
+
+```yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aap-exec
+  labels:
+    openshift.io/cluster-monitoring: "true"
+```
+
+### 16.4 VirtualMachine CR
+
+```yaml
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: aap-exec-node
+  namespace: aap-exec
+  labels:
+    app: aap-exec-node
+spec:
+  runStrategy: Always
+  template:
+    metadata:
+      labels:
+        app: aap-exec-node
+        kubevirt.io/domain: aap-exec-node
+    spec:
+      domain:
+        cpu:
+          cores: 4
+        memory:
+          guest: 8Gi
+        devices:
+          disks:
+            - name: rootdisk
+              disk:
+                bus: virtio
+            - name: cloudinit
+              disk:
+                bus: virtio
+          interfaces:
+            - name: default
+              masquerade: {}
+        machine:
+          type: q35
+      networks:
+        - name: default
+          pod: {}
+      volumes:
+        - name: rootdisk
+          dataVolume:
+            name: aap-exec-node-rootdisk
+        - name: cloudinit
+          cloudInitNoCloud:
+            userData: |
+              #cloud-config
+              hostname: aap-exec-node
+              user: cloud-user
+              ssh_authorized_keys:
+                - <SSH_PUBLIC_KEY>
+              chpasswd:
+                expire: false
+              packages:
+                - python3
+                - python3-pip
+                - podman
+              runcmd:
+                - systemctl enable --now podman.socket
+  dataVolumeTemplates:
+    - metadata:
+        name: aap-exec-node-rootdisk
+      spec:
+        pvc:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 40Gi
+          storageClassName: lvms-vm-vg1
+        source:
+          pvc:
+            namespace: openshift-virtualization-os-images
+            name: rhel9-ab4ec16077fe
+```
+
+### 16.5 Services (Receptor + SSH)
+
+```yaml
+# ClusterIP service for receptor mesh connectivity
+apiVersion: v1
+kind: Service
+metadata:
+  name: aap-exec-node
+  namespace: aap-exec
+spec:
+  type: ClusterIP
+  selector:
+    kubevirt.io/domain: aap-exec-node
+  ports:
+    - port: 27199
+      targetPort: 27199
+      protocol: TCP
+      name: receptor
+```
+
+### 16.6 RHEL Repo Configuration (Entitlements)
+
+Since the VM is not registered with `subscription-manager`, RHEL repos are configured using the cluster's entitlement certificates:
+
+```bash
+# Extract entitlements from the OCP cluster
+oc get secret etc-pki-entitlement -n openshift-config-managed -o jsonpath='{.data}'
+
+# Place certificates at:
+#   /etc/pki/entitlement/entitlement.pem
+#   /etc/pki/entitlement/entitlement-key.pem
+
+# Repos configured:
+#   - rhel-9-baseos (cdn.redhat.com)
+#   - rhel-9-appstream (cdn.redhat.com)
+#   - ansible-automation-platform-2.6-for-rhel-9-x86_64-rpms (cdn.redhat.com)
+```
+
+### 16.7 Packages Installed
+
+```bash
+sudo dnf install -y receptor ansible-runner podman python3 python3-pip
+# receptor:       1.6.3
+# ansible-runner: 2.4.2
+# podman:         5.6.0
+```
+
+### 16.8 Register Execution Node in AAP
+
+```bash
+AAP_GW=$(oc get route aap -n aap -o jsonpath='{.spec.host}')
+AAP_PW=$(oc get secret aap-admin-password -n aap -o jsonpath='{.data.password}' | base64 -d)
+
+# Create the execution node instance
+curl -sk -u "admin:${AAP_PW}" \
+  -X POST -H "Content-Type: application/json" \
+  "https://${AAP_GW}/api/controller/v2/instances/" \
+  -d '{
+    "hostname": "aap-exec-node.aap-exec.svc.cluster.local",
+    "node_type": "execution",
+    "listener_port": 27199,
+    "peers_from_control_nodes": true
+  }'
+
+# Download the install bundle (contains receptor TLS certs and Ansible playbook)
+curl -sk -u "admin:${AAP_PW}" \
+  "https://${AAP_GW}/api/controller/v2/instances/<INSTANCE_ID>/install_bundle/" \
+  -o /tmp/aap-exec-bundle.tar.gz
+```
+
+### 16.9 Install Bundle Contents
+
+The install bundle generated by AAP contains:
+
+```
+*_install_bundle/
+├── receptor/
+│   ├── tls/
+│   │   ├── ca/mesh-CA.crt      # Receptor mesh CA certificate
+│   │   ├── receptor.crt         # Node TLS certificate
+│   │   └── receptor.key         # Node TLS private key
+│   └── work_public_key.pem      # Work signature verification key
+├── install_receptor.yml          # Ansible playbook
+├── inventory.yml                 # Ansible inventory (needs updating)
+├── group_vars/all.yml            # Receptor role variables
+└── requirements.yml              # ansible.receptor collection
+```
+
+The playbook is run against the VM using `virtctl port-forward` for SSH access:
+
+```bash
+# Port-forward SSH
+virtctl port-forward -n aap-exec vm/aap-exec-node 2222:22 &
+
+# Update inventory to use port-forward
+# Then run:
+ansible-galaxy collection install -r requirements.yml --force --ignore-certs
+ansible-playbook -i inventory.yml install_receptor.yml -v
+```
+
+### 16.10 Receptor Configuration
+
+After the install bundle runs, the receptor config must be corrected (the bundle uses `ansible_host` as the node ID, which is `127.0.0.1` when using port-forward):
+
+```yaml
+# /etc/receptor/receptor.conf (final corrected version)
+---
+- node:
+    id: aap-exec-node.aap-exec.svc.cluster.local
+
+- work-verification:
+    publickey: /etc/receptor/work_public_key.pem
+
+- log-level: info
+
+- control-service:
+    service: control
+    filename: /var/run/receptor/receptor.sock
+    permissions: "0660"
+
+- tls-server:
+    name: tls_server
+    cert: /etc/receptor/tls/receptor.crt
+    key: /etc/receptor/tls/receptor.key
+    clientcas: /etc/receptor/tls/ca/mesh-CA.crt
+    requireclientcert: true
+    mintls13: false
+
+- tls-client:
+    name: tls_client
+    cert: /etc/receptor/tls/receptor.crt
+    key: /etc/receptor/tls/receptor.key
+    rootcas: /etc/receptor/tls/ca/mesh-CA.crt
+    insecureskipverify: false
+    mintls13: false
+
+- tcp-listener:
+    port: 27199
+    tls: tls_server
+
+- work-command:
+    worktype: ansible-runner
+    command: ansible-runner
+    params: worker
+    allowruntimeparams: true
+    verifysignature: true
+```
+
+> **Critical:** The `worktype` must be `ansible-runner` (not `local`). Using `local` causes the error `work type did not expect a signature` because the controller sends signed work, and the work type name must match what the controller expects.
+
+### 16.11 Receptor Systemd Service
+
+```ini
+# /etc/systemd/system/receptor.service
+[Unit]
+Description=Receptor
+After=network.target
+
+[Service]
+User=awx
+Group=awx
+ExecStart=/usr/bin/receptor --config /etc/receptor/receptor.conf
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RuntimeDirectory=receptor
+RuntimeDirectoryMode=0755
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### 16.12 Add to Instance Group
+
+```bash
+# Add execution node to the "default" instance group
+curl -sk -u "admin:${AAP_PW}" \
+  -X POST -H "Content-Type: application/json" \
+  "https://${AAP_GW}/api/controller/v2/instance_groups/2/instances/" \
+  -d '{"id": <INSTANCE_ID>}'
+
+# Trigger health check
+curl -sk -u "admin:${AAP_PW}" \
+  -X POST "https://${AAP_GW}/api/controller/v2/instances/<INSTANCE_ID>/health_check/"
+```
+
+### 16.13 Final Status
+
+| Property | Value |
+|----------|-------|
+| **Hostname** | `aap-exec-node.aap-exec.svc.cluster.local` |
+| **Node Type** | execution |
+| **State** | ✅ ready |
+| **Receptor** | 1.6.3 |
+| **ansible-runner** | 2.4.2 |
+| **Capacity** | 76 |
+| **CPU** | 4.0 |
+| **Memory** | 8053932032 (≈ 7.5 GiB) |
+| **Instance Group** | default |
+| **Secure Work Type** | `ansible-runner` |
+
+### 16.14 Receptor Mesh Topology
+
+```
+Controller (aap-controller-task-*)  ←──TLS/TCP:27199──→  Execution Node (aap-exec-node)
+  node_type: control                                        node_type: execution
+  state: ready                                              state: ready
+  work types: local, kubernetes-runtime-auth,               secure work types: ansible-runner
+              kubernetes-incluster-auth
+```
+
+### 16.15 Key Lessons
+
+1. **Worktype must be `ansible-runner`** — Using `local` causes `work type did not expect a signature` because AAP expects the work type name to match the registered work command.
+2. **`work-verification` must come BEFORE `work-command`** in the receptor config YAML — the public key must be loaded before the work command references it.
+3. **`requiretls` is invalid** in receptor 1.6.3 — use `requireclientcert: true` instead.
+4. **Install bundle uses `ansible_host` as node ID** — when running via `virtctl port-forward` (`127.0.0.1`), the TLS cert CN won't match. The config must be corrected post-install.
+5. **Cluster entitlement certs** from `etc-pki-entitlement` secret in `openshift-config-managed` allow the VM to access RHEL and AAP repos without `subscription-manager`.
+6. **ClusterIP Service** is required so the controller pod can reach the VM's receptor on port 27199 via `aap-exec-node.aap-exec.svc.cluster.local`.
+
+### 16.16 GitOps Files
+
+```
+gitops/apps/aap-exec-node/
+├── kustomization.yaml          # Kustomize resources
+├── namespace.yaml              # aap-exec namespace
+├── virtualmachine.yaml         # RHEL 9 VM definition
+├── service.yaml                # Receptor + SSH services
+├── receptor-config.yaml        # Reference receptor.conf
+├── receptor-systemd.service    # Reference systemd unit
+└── configure-exec-node.sh      # Post-install configuration script
+```
+
+### 16.17 Ansible Playbook
+
+```
+ansible/playbooks/configure-exec-node.yml   # Phase 7: Full automated deployment
+```
+
+### 16.18 VM Access
+
+```bash
+# SSH into the VM
+virtctl ssh -n aap-exec -i /tmp/aap-exec-node-key -l cloud-user vm/aap-exec-node
+
+# Check receptor status
+sudo systemctl status receptor
+sudo receptorctl --socket /var/run/receptor/receptor.sock status
+```
 
 ---
 

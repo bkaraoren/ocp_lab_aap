@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: aap-exec-node
+  namespace: aap-exec
+  labels:
+    app: aap-exec-node
+spec:
+  type: ClusterIP
+  selector:
+    kubevirt.io/domain: aap-exec-node
+  ports:
+    - port: 27199
+      targetPort: 27199
+      protocol: TCP
+      name: receptor
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aap-exec-node-ssh
+  namespace: aap-exec
+  labels:
+    app: aap-exec-node
+spec:
+  type: NodePort
+  selector:
+    kubevirt.io/domain: aap-exec-node
+  ports:
+    - port: 22
+      targetPort: 22
+      protocol: TCP
+      name: ssh

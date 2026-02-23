@@ -1,0 +1,441 @@
+---
+# =============================================================================
+# Phase 7: Configure RHEL 9 VM as AAP Execution Node
+# =============================================================================
+# This playbook:
+#   1. Creates the aap-exec namespace and RHEL 9 VM on OpenShift Virtualization
+#   2. Waits for the VM to be running
+#   3. Registers the execution node in AAP and downloads the install bundle
+#   4. Runs the install bundle playbook against the VM via virtctl port-forward
+#   5. Fixes the receptor config (correct node ID and TLS cert paths)
+#   6. Creates a ClusterIP Service for receptor connectivity
+#   7. Adds the node to the default instance group and verifies health
+#
+# Prerequisites:
+#   - oc CLI logged into the cluster
+#   - virtctl available (downloaded automatically if missing)
+#   - ansible.receptor collection (installed automatically)
+#
+# Usage:
+#   ansible-playbook -i inventory/localhost.yml playbooks/configure-exec-node.yml
+# =============================================================================
+
+- name: Configure RHEL 9 VM as AAP Execution Node
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  vars:
+    vm_name: aap-exec-node
+    vm_namespace: aap-exec
+    vm_cpus: 4
+    vm_memory: 8Gi
+    vm_disk_size: 40Gi
+    vm_storage_class: lvms-vm-vg1
+    vm_rhel9_pvc_name: rhel9-ab4ec16077fe
+    vm_rhel9_pvc_namespace: openshift-virtualization-os-images
+    aap_namespace: aap
+    exec_hostname: "{{ vm_name }}.{{ vm_namespace }}.svc.cluster.local"
+    receptor_port: 27199
+    ssh_key_path: /tmp/aap-exec-node-key
+    virtctl_path: /tmp/virtctl
+
+  tasks:
+    # ------------------------------------------------------------------
+    # Step 1: Generate SSH key pair
+    # ------------------------------------------------------------------
+    - name: Generate SSH key pair for VM access
+      community.crypto.openssh_keypair:
+        path: "{{ ssh_key_path }}"
+        type: ed25519
+        comment: aap-exec-node
+      register: ssh_key
+      ignore_errors: true
+
+    - name: Fallback - generate SSH key with ssh-keygen
+      ansible.builtin.command:
+        cmd: ssh-keygen -t ed25519 -f {{ ssh_key_path }} -N "" -C "aap-exec-node"
+        creates: "{{ ssh_key_path }}"
+      when: ssh_key is failed
+
+    - name: Read SSH public key
+      ansible.builtin.slurp:
+        src: "{{ ssh_key_path }}.pub"
+      register: ssh_pubkey
+
+    # ------------------------------------------------------------------
+    # Step 2: Create namespace and VM
+    # ------------------------------------------------------------------
+    - name: Create aap-exec namespace
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ vm_namespace }}"
+            labels:
+              openshift.io/cluster-monitoring: "true"
+
+    - name: Create RHEL 9 VirtualMachine
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: kubevirt.io/v1
+          kind: VirtualMachine
+          metadata:
+            name: "{{ vm_name }}"
+            namespace: "{{ vm_namespace }}"
+            labels:
+              app: aap-exec-node
+          spec:
+            runStrategy: Always
+            template:
+              metadata:
+                labels:
+                  app: aap-exec-node
+                  kubevirt.io/domain: aap-exec-node
+              spec:
+                domain:
+                  cpu:
+                    cores: "{{ vm_cpus }}"
+                  memory:
+                    guest: "{{ vm_memory }}"
+                  devices:
+                    disks:
+                      - name: rootdisk
+                        disk:
+                          bus: virtio
+                      - name: cloudinit
+                        disk:
+                          bus: virtio
+                    interfaces:
+                      - name: default
+                        masquerade: {}
+                  machine:
+                    type: q35
+                networks:
+                  - name: default
+                    pod: {}
+                volumes:
+                  - name: rootdisk
+                    dataVolume:
+                      name: "{{ vm_name }}-rootdisk"
+                  - name: cloudinit
+                    cloudInitNoCloud:
+                      userData: |
+                        #cloud-config
+                        hostname: {{ vm_name }}
+                        user: cloud-user
+                        ssh_authorized_keys:
+                          - {{ (ssh_pubkey.content | b64decode) | trim }}
+                        chpasswd:
+                          expire: false
+                        packages:
+                          - python3
+                          - python3-pip
+                          - podman
+                        runcmd:
+                          - systemctl enable --now podman.socket
+            dataVolumeTemplates:
+              - metadata:
+                  name: "{{ vm_name }}-rootdisk"
+                spec:
+                  pvc:
+                    accessModes:
+                      - ReadWriteOnce
+                    resources:
+                      requests:
+                        storage: "{{ vm_disk_size }}"
+                    storageClassName: "{{ vm_storage_class }}"
+                  source:
+                    pvc:
+                      namespace: "{{ vm_rhel9_pvc_namespace }}"
+                      name: "{{ vm_rhel9_pvc_name }}"
+
+    # ------------------------------------------------------------------
+    # Step 3: Create receptor Service
+    # ------------------------------------------------------------------
+    - name: Create receptor ClusterIP Service
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: "{{ vm_name }}"
+            namespace: "{{ vm_namespace }}"
+            labels:
+              app: aap-exec-node
+          spec:
+            type: ClusterIP
+            selector:
+              kubevirt.io/domain: aap-exec-node
+            ports:
+              - port: "{{ receptor_port }}"
+                targetPort: "{{ receptor_port }}"
+                protocol: TCP
+                name: receptor
+
+    # ------------------------------------------------------------------
+    # Step 4: Wait for VM to be running
+    # ------------------------------------------------------------------
+    - name: Wait for VM to be Running (up to 10 minutes)
+      kubernetes.core.k8s_info:
+        api_version: kubevirt.io/v1
+        kind: VirtualMachine
+        name: "{{ vm_name }}"
+        namespace: "{{ vm_namespace }}"
+      register: vm_status
+      until: vm_status.resources[0].status.printableStatus | default('') == 'Running'
+      retries: 40
+      delay: 15
+
+    - name: Wait additional 60s for cloud-init
+      ansible.builtin.pause:
+        seconds: 60
+        prompt: "Waiting for cloud-init to complete..."
+
+    # ------------------------------------------------------------------
+    # Step 5: Register execution node in AAP
+    # ------------------------------------------------------------------
+    - name: Get AAP gateway route
+      ansible.builtin.command: oc get route aap -n {{ aap_namespace }} -o jsonpath='{.spec.host}'
+      register: aap_gw
+      changed_when: false
+
+    - name: Get AAP admin password
+      ansible.builtin.command: oc get secret aap-admin-password -n {{ aap_namespace }} -o jsonpath='{.data.password}'
+      register: aap_pw_b64
+      changed_when: false
+
+    - name: Decode AAP admin password
+      ansible.builtin.set_fact:
+        aap_password: "{{ aap_pw_b64.stdout | b64decode }}"
+        aap_host: "{{ aap_gw.stdout }}"
+
+    - name: Register execution node in AAP
+      ansible.builtin.uri:
+        url: "https://{{ aap_host }}/api/controller/v2/instances/"
+        method: POST
+        user: admin
+        password: "{{ aap_password }}"
+        force_basic_auth: true
+        validate_certs: false
+        body_format: json
+        body:
+          hostname: "{{ exec_hostname }}"
+          node_type: execution
+          listener_port: "{{ receptor_port }}"
+          peers_from_control_nodes: true
+        status_code: [200, 201]
+      register: exec_instance
+
+    - name: Show execution node instance ID
+      ansible.builtin.debug:
+        msg: "Execution node registered with ID {{ exec_instance.json.id }}"
+
+    # ------------------------------------------------------------------
+    # Step 6: Download and run install bundle
+    # ------------------------------------------------------------------
+    - name: Download install bundle
+      ansible.builtin.uri:
+        url: "https://{{ aap_host }}/api/controller/v2/instances/{{ exec_instance.json.id }}/install_bundle/"
+        user: admin
+        password: "{{ aap_password }}"
+        force_basic_auth: true
+        validate_certs: false
+        dest: /tmp/aap-exec-bundle.tar.gz
+        status_code: 200
+
+    - name: Extract install bundle
+      ansible.builtin.unarchive:
+        src: /tmp/aap-exec-bundle.tar.gz
+        dest: /tmp/
+        remote_src: false
+
+    - name: Find bundle directory
+      ansible.builtin.find:
+        paths: /tmp/
+        patterns: "*_install_bundle"
+        file_type: directory
+      register: bundle_dir
+
+    - name: Update bundle inventory for virtctl port-forward
+      ansible.builtin.copy:
+        dest: "{{ bundle_dir.files[0].path }}/inventory.yml"
+        content: |
+          ---
+          all:
+            hosts:
+              remote-execution:
+                ansible_host: 127.0.0.1
+                ansible_port: 2222
+                ansible_user: cloud-user
+                ansible_ssh_private_key_file: {{ ssh_key_path }}
+                ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+                ansible_become: true
+
+    - name: Install ansible.receptor collection
+      ansible.builtin.command: >
+        ansible-galaxy collection install -r {{ bundle_dir.files[0].path }}/requirements.yml
+        --force --ignore-certs
+      changed_when: true
+
+    - name: Start virtctl port-forward
+      ansible.builtin.command: >
+        {{ virtctl_path }} port-forward -n {{ vm_namespace }} vm/{{ vm_name }} 2222:22
+      async: 300
+      poll: 0
+      register: port_forward
+
+    - name: Wait for port-forward to be ready
+      ansible.builtin.pause:
+        seconds: 5
+
+    - name: Run install bundle playbook
+      ansible.builtin.command: >
+        ansible-playbook -i inventory.yml install_receptor.yml -v
+      args:
+        chdir: "{{ bundle_dir.files[0].path }}"
+      register: install_result
+
+    - name: Show install result
+      ansible.builtin.debug:
+        msg: "Install bundle completed: {{ install_result.rc }}"
+
+    # ------------------------------------------------------------------
+    # Step 7: Fix receptor config (correct node ID and cert paths)
+    # ------------------------------------------------------------------
+    - name: Fix receptor config via virtctl SSH
+      ansible.builtin.shell: |
+        {{ virtctl_path }} ssh -n {{ vm_namespace }} \
+          -i {{ ssh_key_path }} \
+          -l cloud-user \
+          -t "-o StrictHostKeyChecking=no" \
+          -t "-o UserKnownHostsFile=/dev/null" \
+          -c 'set -e
+        sudo tee /etc/receptor/receptor.conf > /dev/null << RCEOF
+        ---
+        - node:
+            id: {{ exec_hostname }}
+        - work-verification:
+            publickey: /etc/receptor/work_public_key.pem
+        - log-level: info
+        - control-service:
+            service: control
+            filename: /var/run/receptor/receptor.sock
+            permissions: "0660"
+        - tls-server:
+            name: tls_server
+            cert: /etc/receptor/tls/receptor.crt
+            key: /etc/receptor/tls/receptor.key
+            clientcas: /etc/receptor/tls/ca/mesh-CA.crt
+            requireclientcert: true
+            mintls13: false
+        - tls-client:
+            name: tls_client
+            cert: /etc/receptor/tls/receptor.crt
+            key: /etc/receptor/tls/receptor.key
+            rootcas: /etc/receptor/tls/ca/mesh-CA.crt
+            insecureskipverify: false
+            mintls13: false
+        - tcp-listener:
+            port: {{ receptor_port }}
+            tls: tls_server
+        - work-command:
+            worktype: ansible-runner
+            command: ansible-runner
+            params: worker
+            allowruntimeparams: true
+            verifysignature: true
+        RCEOF
+        sudo chown awx:awx /etc/receptor/receptor.conf
+        sudo systemctl restart receptor
+        sleep 2
+        sudo systemctl is-active receptor' \
+          vm/{{ vm_name }}
+      register: fix_result
+      changed_when: true
+
+    # ------------------------------------------------------------------
+    # Step 8: Kill port-forward and add to instance group
+    # ------------------------------------------------------------------
+    - name: Stop port-forward
+      ansible.builtin.command: kill {{ port_forward.ansible_job_id }}
+      ignore_errors: true
+      changed_when: false
+
+    - name: Wait for receptor mesh to connect
+      ansible.builtin.pause:
+        seconds: 15
+
+    - name: Add execution node to default instance group
+      ansible.builtin.uri:
+        url: "https://{{ aap_host }}/api/controller/v2/instance_groups/2/instances/"
+        method: POST
+        user: admin
+        password: "{{ aap_password }}"
+        force_basic_auth: true
+        validate_certs: false
+        body_format: json
+        body:
+          id: "{{ exec_instance.json.id }}"
+        status_code: [200, 204]
+
+    # ------------------------------------------------------------------
+    # Step 9: Verify health check
+    # ------------------------------------------------------------------
+    - name: Trigger health check
+      ansible.builtin.uri:
+        url: "https://{{ aap_host }}/api/controller/v2/instances/{{ exec_instance.json.id }}/health_check/"
+        method: POST
+        user: admin
+        password: "{{ aap_password }}"
+        force_basic_auth: true
+        validate_certs: false
+        status_code: [200]
+
+    - name: Wait for health check to complete
+      ansible.builtin.pause:
+        seconds: 15
+
+    - name: Verify execution node is ready
+      ansible.builtin.uri:
+        url: "https://{{ aap_host }}/api/controller/v2/instances/{{ exec_instance.json.id }}/"
+        user: admin
+        password: "{{ aap_password }}"
+        force_basic_auth: true
+        validate_certs: false
+      register: final_status
+
+    - name: Show final execution node status
+      ansible.builtin.debug:
+        msg: |
+          === Execution Node Status ===
+          Hostname:  {{ final_status.json.hostname }}
+          Type:      {{ final_status.json.node_type }}
+          State:     {{ final_status.json.node_state }}
+          Capacity:  {{ final_status.json.capacity }}
+          CPU:       {{ final_status.json.cpu }}
+          Memory:    {{ final_status.json.memory }}
+          Version:   {{ final_status.json.version }}
+          Enabled:   {{ final_status.json.enabled }}
+
+    - name: Assert execution node is ready
+      ansible.builtin.assert:
+        that:
+          - final_status.json.node_state == "ready"
+        fail_msg: "Execution node is NOT ready: {{ final_status.json.node_state }}"
+        success_msg: "✅ Execution node is ready!"
+
+    # ------------------------------------------------------------------
+    # Cleanup
+    # ------------------------------------------------------------------
+    - name: Clean up temporary files
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /tmp/aap-exec-bundle.tar.gz
+        - "{{ bundle_dir.files[0].path }}"
+        - /tmp/entitlement

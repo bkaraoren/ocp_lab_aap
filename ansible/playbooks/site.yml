@@ -15,6 +15,7 @@
 #   ansible-playbook playbooks/store-secrets.yml  -e @vars/secrets.yml
 #   ansible-playbook playbooks/configure-aap.yml  -e @vars/secrets.yml
 #   ansible-playbook playbooks/setup-cert-renewal-job.yml -e @vars/secrets.yml
+#   ansible-playbook playbooks/configure-exec-node.yml
 #
 # With ansible-vault:
 #   ansible-vault encrypt vars/secrets.yml
@@ -50,3 +51,8 @@
 - name: "Phase 6 — Setup AAP Certificate Renewal Job"
   ansible.builtin.import_playbook: setup-cert-renewal-job.yml
   tags: [cert-renewal]
+
+# ─── Phase 7: Configure AAP Execution Node (RHEL 9 VM) ───
+- name: "Phase 7 — Configure AAP Execution Node"
+  ansible.builtin.import_playbook: configure-exec-node.yml
+  tags: [exec-node]

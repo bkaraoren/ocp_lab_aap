@@ -1,0 +1,15 @@
+[Unit]
+Description=Receptor
+After=network.target
+
+[Service]
+User=awx
+Group=awx
+ExecStart=/usr/bin/receptor --config /etc/receptor/receptor.conf
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RuntimeDirectory=receptor
+RuntimeDirectoryMode=0755
+
+[Install]
+WantedBy=multi-user.target
