@@ -1,0 +1,200 @@
+---
+# =============================================================================
+# AAP Post-Install Configuration — Ansible version of configure-aap.sh
+# =============================================================================
+# Configures AAP Gateway after deployment:
+#   1. Creates Google OAuth2 authenticator
+#   2. Creates authenticator map (superuser for bkaraore@redhat.com)
+#   3. Creates Self-Service Portal OAuth application
+#   4. Enables OAuth for external users
+#   5. Generates an admin token for the portal
+#
+# Usage:
+#   cd ansible/
+#   ansible-playbook playbooks/configure-aap.yml \
+#     -e google_client_secret=xxxxx
+# =============================================================================
+- name: Configure AAP Gateway
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - ../vars/main.yml
+
+  vars:
+    portal_url: "https://{{ portal_route_host }}"
+
+  pre_tasks:
+    - name: "Validate required variables"
+      ansible.builtin.assert:
+        that:
+          - google_client_id is defined and google_client_id | length > 0
+          - google_client_secret is defined and google_client_secret | length > 0
+        fail_msg: "google_client_id and google_client_secret must be provided"
+
+    - name: "Get AAP Gateway route"
+      ansible.builtin.command: >
+        oc get route aap -n {{ aap_namespace }} -o jsonpath='{.spec.host}'
+      register: aap_gw_raw
+      changed_when: false
+
+    - name: "Get AAP admin password"
+      ansible.builtin.command: >
+        oc get secret aap-admin-password -n {{ aap_namespace }}
+        -o jsonpath='{.data.password}'
+      register: aap_admin_pw_b64
+      changed_when: false
+
+    - name: "Set AAP facts"
+      ansible.builtin.set_fact:
+        aap_gw_host: "{{ aap_gw_raw.stdout }}"
+        aap_admin_password: "{{ aap_admin_pw_b64.stdout | b64decode }}"
+
+    - name: "Display target"
+      ansible.builtin.debug:
+        msg: "AAP Gateway: https://{{ aap_gw_host }}"
+
+  tasks:
+    # ─── 1. Create Google OAuth2 Authenticator ───
+    - name: "Create Google OAuth2 authenticator"
+      ansible.builtin.uri:
+        url: "https://{{ aap_gw_host }}/api/gateway/v1/authenticators/"
+        method: POST
+        user: "{{ aap_admin_user }}"
+        password: "{{ aap_admin_password }}"
+        force_basic_auth: true
+        validate_certs: false
+        body_format: json
+        body:
+          name: "Red Hat SSO (Google)"
+          enabled: true
+          create_objects: true
+          remove_users: false
+          type: "ansible_base.authentication.authenticator_plugins.google_oauth2"
+          configuration:
+            SOCIAL_AUTH_GOOGLE_OAUTH2_KEY: "{{ google_client_id }}"
+            SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET: "{{ google_client_secret }}"
+            ADDITIONAL_UNVERIFIED_ARGS:
+              hd: "{{ aap_google_hosted_domain }}"
+        status_code: [200, 201]
+      register: auth_result
+      no_log: true
+
+    - name: "Authenticator created"
+      ansible.builtin.debug:
+        msg: "✅ Authenticator ID: {{ auth_result.json.id }}"
+
+    # ─── 2. Create authenticator map (superuser) ───
+    - name: "Create authenticator map — {{ aap_superuser_email }} → superuser"
+      ansible.builtin.uri:
+        url: "https://{{ aap_gw_host }}/api/gateway/v1/authenticator_maps/"
+        method: POST
+        user: "{{ aap_admin_user }}"
+        password: "{{ aap_admin_password }}"
+        force_basic_auth: true
+        validate_certs: false
+        body_format: json
+        body:
+          name: "bkaraore-superuser"
+          authenticator: "{{ auth_result.json.id }}"
+          map_type: "is_superuser"
+          triggers:
+            groups: {}
+            attributes:
+              email:
+                equals: "{{ aap_superuser_email }}"
+          organization: 1
+          revoke: true
+        status_code: [200, 201]
+      register: map_result
+
+    - name: "Authenticator map created"
+      ansible.builtin.debug:
+        msg: "✅ Map ID: {{ map_result.json.id }}"
+
+    # ─── 3. Create Self-Service Portal OAuth application ───
+    - name: "Create Self-Service Portal OAuth application"
+      ansible.builtin.uri:
+        url: "https://{{ aap_gw_host }}/api/gateway/v1/applications/"
+        method: POST
+        user: "{{ aap_admin_user }}"
+        password: "{{ aap_admin_password }}"
+        force_basic_auth: true
+        validate_certs: false
+        body_format: json
+        body:
+          name: "Self-Service Automation Portal"
+          organization: 1
+          client_type: "confidential"
+          authorization_grant_type: "authorization-code"
+          redirect_uris: "{{ portal_url }}/api/auth/rhaap/handler/frame"
+        status_code: [200, 201]
+      register: app_result
+
+    - name: "Set portal OAuth facts"
+      ansible.builtin.set_fact:
+        portal_client_id: "{{ app_result.json.client_id }}"
+        portal_client_secret: "{{ app_result.json.client_secret }}"
+
+    - name: "Portal OAuth application created"
+      ansible.builtin.debug:
+        msg: |
+          ✅ OAuth Application created
+          Client ID    : {{ portal_client_id }}
+          Client Secret: {{ portal_client_secret }}
+
+    # ─── 4. Enable OAuth for external users ───
+    - name: "Enable OAuth for external users"
+      ansible.builtin.uri:
+        url: "https://{{ aap_gw_host }}/api/gateway/v1/settings/oauth2_provider/"
+        method: PUT
+        user: "{{ aap_admin_user }}"
+        password: "{{ aap_admin_password }}"
+        force_basic_auth: true
+        validate_certs: false
+        body_format: json
+        body:
+          ALLOW_OAUTH2_FOR_EXTERNAL_USERS: true
+        status_code: [200, 204]
+
+    - name: "External users enabled"
+      ansible.builtin.debug:
+        msg: "✅ External users OAuth enabled"
+
+    # ─── 5. Generate admin token for portal ───
+    - name: "Generate admin token for portal"
+      ansible.builtin.uri:
+        url: "https://{{ aap_gw_host }}/api/gateway/v1/tokens/"
+        method: POST
+        user: "{{ aap_admin_user }}"
+        password: "{{ aap_admin_password }}"
+        force_basic_auth: true
+        validate_certs: false
+        body_format: json
+        body:
+          scope: "write"
+          application: 1
+          description: "Self-Service Portal Token"
+        status_code: [200, 201]
+      register: token_result
+
+    - name: "Set AAP token fact"
+      ansible.builtin.set_fact:
+        aap_portal_token: "{{ token_result.json.token }}"
+
+    # ─── Summary ───
+    - name: "AAP configuration complete"
+      ansible.builtin.debug:
+        msg: |
+          ============================================
+          ✅ AAP configuration complete!
+          ============================================
+
+          Portal secrets to store in Vault:
+            vault kv put secret/aap/portal \
+              aap_host_url='https://{{ aap_gw_host }}' \
+              oauth_client_id='{{ portal_client_id }}' \
+              oauth_client_secret='{{ portal_client_secret }}' \
+              aap_token='{{ aap_portal_token }}'
+
+          Google Cloud Console callback URLs to register:
+            - https://{{ aap_gw_host }}/complete/google-oauth2/

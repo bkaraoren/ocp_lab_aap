@@ -1,0 +1,46 @@
+---
+# =============================================================================
+# OCP SNO Cluster — Master Playbook (site.yml)
+# =============================================================================
+# Runs the full deployment sequence. You can also run each playbook individually.
+#
+# Full deployment:
+#   cd ansible/
+#   ansible-playbook playbooks/site.yml -e @vars/secrets.yml
+#
+# Individual playbooks:
+#   ansible-playbook playbooks/bootstrap.yml
+#   ansible-playbook playbooks/configure-vault.yml -e @vars/secrets.yml
+#   ansible-playbook playbooks/generate-certs.yml -e @vars/secrets.yml
+#   ansible-playbook playbooks/store-secrets.yml  -e @vars/secrets.yml
+#   ansible-playbook playbooks/configure-aap.yml  -e @vars/secrets.yml
+#
+# With ansible-vault:
+#   ansible-vault encrypt vars/secrets.yml
+#   ansible-playbook playbooks/site.yml -e @vars/secrets.yml --ask-vault-pass
+# =============================================================================
+
+# ─── Phase 1: Bootstrap ArgoCD & Applications ───
+- name: "Phase 1 — Bootstrap cluster with GitOps"
+  ansible.builtin.import_playbook: bootstrap.yml
+  tags: [bootstrap]
+
+# ─── Phase 2: Configure Vault (after manual init + unseal) ───
+- name: "Phase 2 — Configure Vault"
+  ansible.builtin.import_playbook: configure-vault.yml
+  tags: [vault]
+
+# ─── Phase 3: Generate Let's Encrypt certificates ───
+- name: "Phase 3 — Generate Let's Encrypt certificates"
+  ansible.builtin.import_playbook: generate-certs.yml
+  tags: [certs]
+
+# ─── Phase 4: Store all secrets in Vault ───
+- name: "Phase 4 — Store secrets in Vault"
+  ansible.builtin.import_playbook: store-secrets.yml
+  tags: [secrets]
+
+# ─── Phase 5: Configure AAP (after AAP pods are running) ───
+- name: "Phase 5 — Configure AAP Gateway"
+  ansible.builtin.import_playbook: configure-aap.yml
+  tags: [aap]

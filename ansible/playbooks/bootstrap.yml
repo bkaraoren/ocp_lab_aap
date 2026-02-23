@@ -1,0 +1,187 @@
+---
+# =============================================================================
+# OCP SNO Cluster Bootstrap — Ansible version of bootstrap.sh
+# =============================================================================
+# Installs OpenShift GitOps (ArgoCD), creates the AppProject, deploys all
+# ArgoCD Applications, and grants NFS SCC.
+#
+# Usage:
+#   cd ansible/
+#   ansible-playbook playbooks/bootstrap.yml \
+#     -e git_repo_url=https://github.com/bkaraoren/ocp_lab_aap.git
+# =============================================================================
+- name: Bootstrap OCP SNO cluster with GitOps
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - ../vars/main.yml
+
+  pre_tasks:
+    # ─── Phase 0: Verify prerequisites ───
+    - name: "Phase 0 — Check oc CLI is available"
+      ansible.builtin.command: oc version --client -o json
+      register: oc_version_raw
+      changed_when: false
+
+    - name: "Phase 0 — Check helm CLI is available"
+      ansible.builtin.command: helm version --short
+      register: helm_version
+      changed_when: false
+
+    - name: "Phase 0 — Verify logged in to OCP"
+      ansible.builtin.command: oc whoami
+      register: oc_user
+      changed_when: false
+
+    - name: "Phase 0 — Show cluster info"
+      ansible.builtin.command: oc whoami --show-server
+      register: oc_server
+      changed_when: false
+
+    - name: "Phase 0 — Display prerequisites"
+      ansible.builtin.debug:
+        msg: |
+          ✅ oc CLI   : {{ (oc_version_raw.stdout | from_json).releaseClientVersion | default('unknown') }}
+          ✅ helm CLI  : {{ helm_version.stdout }}
+          ✅ Logged in : {{ oc_user.stdout }}
+          ✅ Cluster   : {{ oc_server.stdout }}
+
+  tasks:
+    # ─── Phase 1: Install OpenShift GitOps operator ───
+    - name: "Phase 1 — Apply GitOps subscription"
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ gitops_dir }}/argocd/gitops-subscription.yaml"
+
+    - name: "Phase 1 — Wait for GitOps CSV to succeed"
+      ansible.builtin.shell: |
+        oc get csv -n openshift-gitops-operator --no-headers 2>/dev/null | grep -c Succeeded
+      register: csv_check
+      retries: 60
+      delay: 10
+      until: csv_check.stdout | int >= 1
+      changed_when: false
+
+    - name: "Phase 1 — Wait for ArgoCD pods to be running"
+      ansible.builtin.shell: |
+        oc get pods -n {{ gitops_namespace }} --no-headers 2>/dev/null | grep -c Running
+      register: argo_pods
+      retries: 60
+      delay: 10
+      until: argo_pods.stdout | int >= 5
+      changed_when: false
+
+    - name: "Phase 1 — GitOps operator ready"
+      ansible.builtin.debug:
+        msg: "✅ GitOps operator installed — {{ argo_pods.stdout }} ArgoCD pods running"
+
+    # ─── Phase 2: Grant ArgoCD cluster-admin ───
+    - name: "Phase 2 — Apply ArgoCD ClusterRoleBinding"
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ gitops_dir }}/argocd/cluster-role.yaml"
+
+    # ─── Phase 3: Create AppProject ───
+    - name: "Phase 3 — Read AppProject manifest"
+      ansible.builtin.slurp:
+        src: "{{ gitops_dir }}/argocd/appproject.yaml"
+      register: appproject_raw
+
+    - name: "Phase 3 — Apply AppProject (with repo URL substitution)"
+      kubernetes.core.k8s:
+        state: present
+        definition: "{{ appproject_raw.content | b64decode | regex_replace('https://github.com/YOUR_ORG/aap-ocp-karaoren.git', git_repo_url) | from_yaml }}"
+
+    # ─── Phase 4: Deploy ArgoCD Applications ───
+    - name: "Phase 4 — Find all Application manifests"
+      ansible.builtin.find:
+        paths: "{{ gitops_dir }}/argocd/applications"
+        patterns: "*.yaml"
+        excludes: "kustomization.yaml"
+      register: app_files
+
+    - name: "Phase 4 — Read Application manifests"
+      ansible.builtin.slurp:
+        src: "{{ item.path }}"
+      loop: "{{ app_files.files | sort(attribute='path') }}"
+      register: app_manifests
+
+    - name: "Phase 4 — Apply each ArgoCD Application"
+      kubernetes.core.k8s:
+        state: present
+        definition: "{{ item.content | b64decode | regex_replace('https://github.com/YOUR_ORG/aap-ocp-karaoren.git', git_repo_url) | from_yaml }}"
+      loop: "{{ app_manifests.results }}"
+      loop_control:
+        label: "{{ item.item.path | basename }}"
+
+    - name: "Phase 4 — All Applications deployed"
+      ansible.builtin.debug:
+        msg: "✅ {{ app_manifests.results | length }} ArgoCD Applications created"
+
+    # ─── Phase 5: NFS server SCC ───
+    - name: "Phase 5 — Wait for nfs-server namespace"
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Namespace
+        name: "{{ nfs_namespace }}"
+      register: nfs_ns
+      retries: 30
+      delay: 5
+      until: nfs_ns.resources | length > 0
+
+    - name: "Phase 5 — Grant privileged SCC to NFS service account"
+      ansible.builtin.command: >
+        oc adm policy add-scc-to-user privileged
+        -z nfs-server -n {{ nfs_namespace }}
+      register: nfs_scc
+      changed_when: "'added' in nfs_scc.stdout"
+      failed_when: false
+
+  post_tasks:
+    - name: "Get ArgoCD route"
+      ansible.builtin.command: >
+        oc get route openshift-gitops-server -n {{ gitops_namespace }}
+        -o jsonpath='{.spec.host}'
+      register: argocd_route
+      changed_when: false
+
+    - name: "Bootstrap complete"
+      ansible.builtin.debug:
+        msg: |
+          ============================================================
+            ✅ Bootstrap Phase Complete!
+          ============================================================
+
+          ArgoCD UI: https://{{ argocd_route.stdout }}
+
+          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            MANUAL STEPS REQUIRED (in order):
+          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+          1. VAULT INIT + UNSEAL
+             oc exec -n vault vault-0 -- vault operator init -key-shares=1 -key-threshold=1
+             oc exec -n vault vault-0 -- vault operator unseal <UNSEAL_KEY>
+
+          2. VAULT CONFIGURATION
+             ansible-playbook playbooks/configure-vault.yml \
+               -e vault_root_token=<ROOT_TOKEN>
+
+          3. LETS ENCRYPT CERTIFICATES
+             ansible-playbook playbooks/generate-certs.yml \
+               -e namecom_username=<user> -e namecom_api_token=<token>
+
+          4. STORE SECRETS IN VAULT
+             ansible-playbook playbooks/store-secrets.yml \
+               -e vault_root_token=<TOKEN> -e slack_webhook_url=<URL>
+
+          5. ALERTMANAGER CONFIG
+             Get Slack URL from Vault and create the alertmanager secret
+
+          6. AAP CONFIGURATION (after all AAP pods are Running)
+             ansible-playbook playbooks/configure-aap.yml
+
+          7. GOOGLE CLOUD CONSOLE
+             Register callback URLs as authorized redirect URIs
+
+          8. OAUTH SECRETS
+             Create OAuth secrets in openshift-config namespace

@@ -1,0 +1,180 @@
+---
+# =============================================================================
+# Vault Post-Install Configuration — Ansible version of configure-vault.sh
+# =============================================================================
+# Configures Vault after it is deployed and unsealed:
+#   - KV v2 secrets engine
+#   - Kubernetes auth method
+#   - Policies (admin, aap-policy, external-secrets)
+#   - Kubernetes auth roles (aap, external-secrets)
+#   - OIDC auth method (Google)
+#   - AAP integration token
+#
+# Usage:
+#   cd ansible/
+#   ansible-playbook playbooks/configure-vault.yml \
+#     -e vault_root_token=hvs.xxxxx \
+#     -e google_client_secret=xxxxx
+# =============================================================================
+- name: Configure Vault
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - ../vars/main.yml
+
+  vars:
+    vault_exec: "oc exec -n {{ vault_namespace }} {{ vault_pod }} -- sh -c"
+    vt: "{{ vault_root_token }}"
+
+  pre_tasks:
+    - name: "Validate required variables"
+      ansible.builtin.assert:
+        that:
+          - vault_root_token is defined and vault_root_token | length > 0
+          - google_client_id is defined and google_client_id | length > 0
+          - google_client_secret is defined and google_client_secret | length > 0
+        fail_msg: "vault_root_token, google_client_id, and google_client_secret must be provided"
+
+    - name: "Check Vault pod is running"
+      ansible.builtin.command: >
+        oc get pod {{ vault_pod }} -n {{ vault_namespace }}
+        -o jsonpath='{.status.phase}'
+      register: vault_status
+      changed_when: false
+      failed_when: vault_status.stdout != 'Running'
+
+  tasks:
+    # ─── 1. Enable KV v2 secrets engine ───
+    - name: "Enable KV v2 secrets engine at secret/"
+      ansible.builtin.shell: |
+        {{ vault_exec }} "VAULT_TOKEN='{{ vt }}' vault secrets enable -path=secret kv-v2"
+      register: kv_enable
+      changed_when: kv_enable.rc == 0
+      failed_when: false
+
+    - name: "KV engine status"
+      ansible.builtin.debug:
+        msg: "{{ '✅ KV v2 enabled' if kv_enable.rc == 0 else '⏭️  KV v2 already enabled' }}"
+
+    # ─── 2. Enable Kubernetes auth ───
+    - name: "Enable Kubernetes auth method"
+      ansible.builtin.shell: |
+        {{ vault_exec }} "VAULT_TOKEN='{{ vt }}' vault auth enable kubernetes"
+      register: k8s_auth_enable
+      changed_when: k8s_auth_enable.rc == 0
+      failed_when: false
+
+    # ─── 3. Configure Kubernetes auth (in-cluster) ───
+    - name: "Configure Kubernetes auth"
+      ansible.builtin.shell: |
+        {{ vault_exec }} "VAULT_TOKEN='{{ vt }}' vault write auth/kubernetes/config \
+          kubernetes_host=\"https://\$KUBERNETES_SERVICE_HOST:\$KUBERNETES_SERVICE_PORT\" \
+          kubernetes_ca_cert=@/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+      changed_when: true
+
+    # ─── 4. Create policies ───
+    - name: "Create admin policy"
+      ansible.builtin.shell: |
+        {{ vault_exec }} "VAULT_TOKEN='{{ vt }}' vault policy write admin -" <<'POLICY'
+        path "*" {
+          capabilities = ["create", "read", "update", "delete", "list", "sudo"]
+        }
+        POLICY
+      changed_when: true
+
+    - name: "Create aap-policy"
+      ansible.builtin.shell: |
+        {{ vault_exec }} "VAULT_TOKEN='{{ vt }}' vault policy write aap-policy -" <<'POLICY'
+        path "secret/*" {
+          capabilities = ["create", "read", "update", "delete", "list"]
+        }
+        POLICY
+      changed_when: true
+
+    - name: "Create external-secrets policy"
+      ansible.builtin.shell: |
+        {{ vault_exec }} "VAULT_TOKEN='{{ vt }}' vault policy write external-secrets -" <<'POLICY'
+        path "secret/data/*" {
+          capabilities = ["read"]
+        }
+        POLICY
+      changed_when: true
+
+    # ─── 5. Create Kubernetes auth roles ───
+    - name: "Create AAP Kubernetes auth role"
+      ansible.builtin.shell: |
+        {{ vault_exec }} "VAULT_TOKEN='{{ vt }}' vault write auth/kubernetes/role/aap \
+          bound_service_account_names='*' \
+          bound_service_account_namespaces={{ aap_namespace }} \
+          policies=aap-policy \
+          ttl=24h"
+      changed_when: true
+
+    - name: "Create External Secrets Kubernetes auth role"
+      ansible.builtin.shell: |
+        {{ vault_exec }} "VAULT_TOKEN='{{ vt }}' vault write auth/kubernetes/role/external-secrets \
+          bound_service_account_names=external-secrets \
+          bound_service_account_namespaces={{ eso_namespace }} \
+          policies=external-secrets \
+          ttl=24h"
+      changed_when: true
+
+    # ─── 6. Enable and configure OIDC auth ───
+    - name: "Enable OIDC auth method"
+      ansible.builtin.shell: |
+        {{ vault_exec }} "VAULT_TOKEN='{{ vt }}' vault auth enable oidc"
+      register: oidc_enable
+      changed_when: oidc_enable.rc == 0
+      failed_when: false
+
+    - name: "Configure OIDC with Google"
+      ansible.builtin.shell: |
+        {{ vault_exec }} "VAULT_TOKEN='{{ vt }}' vault write auth/oidc/config \
+          oidc_discovery_url='https://accounts.google.com' \
+          oidc_client_id='{{ google_client_id }}' \
+          oidc_client_secret='{{ google_client_secret }}' \
+          default_role='redhat-user'"
+      changed_when: true
+      no_log: true
+
+    - name: "Create OIDC role (admin for {{ aap_superuser_email }} only)"
+      ansible.builtin.shell: |
+        {{ vault_exec }} "VAULT_TOKEN='{{ vt }}' vault write auth/oidc/role/redhat-user \
+          bound_audiences='{{ google_client_id }}' \
+          allowed_redirect_uris='https://vault.{{ cluster_apps_domain }}/ui/vault/auth/oidc/oidc/callback' \
+          allowed_redirect_uris='http://localhost:8250/oidc/callback' \
+          user_claim='email' \
+          policies='admin' \
+          oidc_scopes='openid,email,profile' \
+          bound_claims='{\"hd\":\"{{ aap_google_hosted_domain }}\",\"email\":\"{{ aap_superuser_email }}\"}'"
+      changed_when: true
+
+    # ─── 7. Create AAP integration token ───
+    - name: "Create long-lived AAP integration token"
+      ansible.builtin.shell: |
+        {{ vault_exec }} "VAULT_TOKEN='{{ vt }}' vault token create \
+          -policy=aap-policy \
+          -period=8760h \
+          -display-name='AAP Integration Token' \
+          -format=json"
+      register: aap_token_raw
+      changed_when: true
+
+    - name: "Parse AAP integration token"
+      ansible.builtin.set_fact:
+        aap_vault_token: "{{ (aap_token_raw.stdout | from_json).auth.client_token }}"
+
+    - name: "Vault configuration complete"
+      ansible.builtin.debug:
+        msg: |
+          ============================================
+          ✅ Vault configuration complete!
+          ============================================
+
+          AAP Integration Token: {{ aap_vault_token }}
+
+          Next steps:
+            1. Save the AAP Integration Token above
+            2. Register callback URL in Google Cloud Console:
+               https://vault.{{ cluster_apps_domain }}/ui/vault/auth/oidc/oidc/callback
+            3. Run store-secrets.yml to populate Vault with all cluster secrets
