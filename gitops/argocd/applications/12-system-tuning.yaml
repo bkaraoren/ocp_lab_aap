@@ -1,0 +1,20 @@
+# Wave 12: Node system tuning (kubelet reserved resources)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: system-tuning
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "12"
+spec:
+  project: sno-cluster
+  source:
+    repoURL: "https://github.com/YOUR_ORG/aap-ocp-karaoren.git"  # ← UPDATE
+    targetRevision: main
+    path: gitops/cluster/system-tuning
+  destination:
+    server: "https://kubernetes.default.svc"
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
