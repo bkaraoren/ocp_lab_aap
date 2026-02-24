@@ -13,3 +13,4 @@ resources:
   - 09-aap.yaml
   - 10-certificates.yaml
   - 11-portal.yaml
+  - 12-system-tuning.yaml

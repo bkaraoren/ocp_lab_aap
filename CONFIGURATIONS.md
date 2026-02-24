@@ -24,6 +24,7 @@
 14. [Ansible Playbooks (Alternative to Shell Scripts)](#14-ansible-playbooks-alternative-to-shell-scripts)
 15. [Automated Certificate Renewal (AAP Scheduled Job)](#15-automated-certificate-renewal-aap-scheduled-job)
 16. [AAP Execution Node (RHEL 9 VM)](#16-aap-execution-node-rhel-9-vm)
+17. [Node System Tuning (Kubelet Reserved Resources)](#17-node-system-tuning-kubelet-reserved-resources)
 
 ---
 
@@ -2170,3 +2171,75 @@ curl -sk -X PATCH "https://${AAP_GW}/api/gateway/v1/applications/1/" \
 | Redirect URI | `/oauth2/callback` | `/api/auth/rhaap/handler/frame` |
 
 > **Note:** The Backstage `@backstage/plugin-auth-backend-module-rhaap` plugin uses the `/api/auth/rhaap/handler/frame` callback path, not the generic `/oauth2/callback`.
+
+---
+
+## 17. Node System Tuning (Kubelet Reserved Resources)
+
+### 17.1 Problem
+
+On a Single-Node OpenShift cluster running many workloads (AAP, Vault, OpenShift Virtualization, ArgoCD, ESO, monitoring, etc.), the default `system-reserved` memory (~1.2 GiB) is insufficient. This triggers the alert:
+
+> *System memory usage of X on hercules.ocp.karaoren.eu exceeds 95% of the reservation.*
+
+If system processes (kubelet, CRI-O, kernel) are starved of memory, the node can become unstable or evict pods unexpectedly.
+
+### 17.2 Solution
+
+A `KubeletConfig` CR increases the `system-reserved` memory to **2 GiB**, giving system daemons sufficient headroom.
+
+### 17.3 KubeletConfig CR
+
+```yaml
+apiVersion: machineconfiguration.openshift.io/v1
+kind: KubeletConfig
+metadata:
+  name: increase-system-reserved
+spec:
+  machineConfigPoolSelector:
+    matchLabels:
+      pools.operator.machineconfiguration.openshift.io/master: ""
+  kubeletConfig:
+    systemReserved:
+      memory: "2Gi"
+      cpu: "500m"
+      ephemeral-storage: "1Gi"
+```
+
+The `master` pool label is used because on SNO the single node carries the `master` role.
+
+### 17.4 Deployment
+
+Managed via ArgoCD:
+
+| Component | Path |
+|-----------|------|
+| **Manifest** | `gitops/cluster/system-tuning/kubelet-system-reserved.yaml` |
+| **Kustomization** | `gitops/cluster/system-tuning/kustomization.yaml` |
+| **ArgoCD Application** | `gitops/argocd/applications/12-system-tuning.yaml` |
+
+### 17.5 Important Notes
+
+- Applying or changing a `KubeletConfig` triggers a **MachineConfig rollout**, which **reboots the node**. On SNO this means **cluster downtime** — plan accordingly.
+- After the rollout, verify the new allocatable memory:
+
+```bash
+# Monitor rollout
+oc get mcp master -w
+
+# Verify allocatable memory decreased (more is reserved for system)
+oc get node hercules.ocp.karaoren.eu -o jsonpath='{.status.allocatable.memory}'
+
+# Confirm the kubelet config was applied
+oc debug node/hercules.ocp.karaoren.eu -- chroot /host cat /etc/kubernetes/kubelet.conf | grep -A5 systemReserved
+```
+
+### 17.6 Reserved Resources Summary
+
+| Resource | Default | New Value |
+|----------|---------|-----------|
+| **Memory** | ~1.2 GiB | 2 GiB |
+| **CPU** | 0 | 500m |
+| **Ephemeral Storage** | 0 | 1 GiB |
+
+> **Tip:** If the alert returns after increasing to 2 GiB, further increase to 2.5 or 3 GiB. Monitor actual system usage with: `oc adm top node`.
