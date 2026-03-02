@@ -28,6 +28,7 @@
 18. [Static IP Configuration (Hetzner DHCP Deprecation)](#18-static-ip-configuration-hetzner-dhcp-deprecation)
 19. [AAP Credential Lookup via HashiCorp Vault](#19-aap-credential-lookup-via-hashicorp-vault)
 20. [AAP Slack Notification Template](#20-aap-slack-notification-template)
+21. [Grafana & AAP Metrics Dashboard](#21-grafana--aap-metrics-dashboard)
 
 ---
 
@@ -2472,4 +2473,111 @@ curl -sk -X POST "$AAP_URL/api/controller/v2/job_templates/<JT_ID>/notification_
 
 curl -sk -X POST "$AAP_URL/api/controller/v2/job_templates/<JT_ID>/notification_templates_error/" \
   -u "admin:<password>" -H "Content-Type: application/json" -d '{"id": 3}'
+```
+
+---
+
+## 21. Grafana & AAP Metrics Dashboard
+
+**Date:** March 2, 2026  
+**Purpose:** Deploy Grafana on OCP to visualize AAP metrics scraped by the platform Prometheus via a ServiceMonitor.
+
+### 21.1 Architecture
+
+```
+AAP Controller (gateway) → /api/controller/v2/metrics/ (Prometheus format)
+  → ServiceMonitor (aap-metrics, basicAuth) → Platform Prometheus scrapes every 60s
+  → Thanos Querier aggregates metrics
+  → Grafana queries Thanos via SA token (cluster-monitoring-view)
+  → AAP Overview Dashboard displays panels
+```
+
+### 21.2 Components Deployed
+
+| Component | Namespace | Description |
+|-----------|-----------|-------------|
+| Grafana Operator v5 | `grafana` | Community operator from OperatorHub |
+| Grafana Instance | `grafana` | Grafana server with OCP route |
+| ServiceAccount `grafana-sa` | `grafana` | Bound to `cluster-monitoring-view` ClusterRole |
+| Service `aap-metrics` | `aap` | Targets AAP gateway pods on port 8000 |
+| ServiceMonitor `aap-metrics` | `aap` | Scrapes `/api/controller/v2/metrics/` with basicAuth |
+| Secret `aap-metrics-auth` | `aap` | AAP admin credentials for metrics endpoint auth |
+| GrafanaDatasource `prometheus-ocp` | `grafana` | Thanos querier with SA bearer token |
+| GrafanaDashboard `aap-overview` | `grafana` | AAP Overview dashboard |
+
+### 21.3 Access
+
+| Setting | Value |
+|---------|-------|
+| **URL** | `https://grafana-route-grafana.apps.ocp.karaoren.eu` |
+| **Username** | `admin` |
+| **Password** | `<GRAFANA_PASSWORD_IN_VAULT>` |
+
+### 21.4 AAP Metrics Available
+
+The AAP controller exposes ~60 Prometheus metrics at `/api/controller/v2/metrics/`. Key metrics used in the dashboard:
+
+| Metric | Description |
+|--------|-------------|
+| `awx_organizations_total` | Number of organizations |
+| `awx_users_total` | Number of users |
+| `awx_inventories_total` | Number of inventories |
+| `awx_projects_total` | Number of projects |
+| `awx_job_templates_total` | Number of job templates |
+| `awx_schedules_total` | Number of schedules |
+| `awx_status_total{status}` | Jobs by status (successful, failed, error, canceled) |
+| `awx_running_jobs_total` | Currently running jobs |
+| `awx_pending_jobs_total` | Pending jobs in queue |
+| `awx_instance_capacity` | Total capacity per node |
+| `awx_instance_consumed_capacity` | Consumed capacity per node |
+| `awx_instance_remaining_capacity` | Remaining capacity per node |
+| `awx_license_instance_total` | Licensed managed host count |
+| `awx_license_instance_free` | Remaining licensed hosts |
+| `awx_database_connections_total` | Database connection count |
+| `task_manager_*` | Task manager internals (timing, counts) |
+| `callback_receiver_*` | Event processing pipeline metrics |
+
+### 21.5 Dashboard Panels
+
+The **Ansible Automation Platform - Overview** dashboard includes:
+
+- **System Overview:** Organizations, Users, Inventories, Projects, Job Templates, Schedules
+- **Job Status:** Successful, Failed, Running, Pending counts + status over time graph
+- **Instance Capacity:** Capacity usage gauge (%), capacity over time, jobs by launch type
+- **Hosts & License:** License usage gauge (%), total/active hosts, licensed/free counts, DB connections
+- **Task Manager Internals:** Task manager timing, callback receiver queue/processing metrics
+
+### 21.6 ServiceMonitor Details
+
+The `aap` namespace has the `openshift.io/cluster-monitoring=true` label, so the **platform Prometheus** (not user workload) scrapes the ServiceMonitor. This is important because:
+- The ServiceMonitor must be in a namespace with this label
+- Grafana must query the platform Thanos querier (not user workload)
+- The `grafana-sa` ServiceAccount needs `cluster-monitoring-view` ClusterRole
+
+### 21.7 GitOps Manifests
+
+| File | Description |
+|------|-------------|
+| `gitops/operators/grafana/subscription.yaml` | Grafana Operator Namespace, OperatorGroup, Subscription |
+| `gitops/apps/grafana/grafana-instance.yaml` | Grafana CR, ServiceAccount, ClusterRoleBinding, SA token |
+| `gitops/apps/grafana/aap-metrics.yaml` | AAP metrics Service and ServiceMonitor |
+| `gitops/apps/grafana/datasource.yaml` | GrafanaDatasource CR (Thanos querier) |
+| `gitops/apps/grafana/aap-dashboard.yaml` | GrafanaDashboard CR (AAP Overview) |
+
+### 21.8 Post-Deployment Steps
+
+After applying the GitOps manifests, the datasource requires the SA token:
+
+```bash
+# Get the SA token
+TOKEN=$(oc get secret grafana-sa-token -n grafana -o jsonpath='{.data.token}' | base64 -d)
+
+# Update the datasource (or edit in Grafana UI under Data Sources > Prometheus-OCP)
+# Replace <REPLACE_WITH_GRAFANA_SA_TOKEN> in datasource.yaml with the actual token
+
+# Create the AAP metrics auth secret
+AAP_PASS=$(oc get secret aap-admin-password -n aap -o jsonpath='{.data.password}' | base64 -d)
+oc create secret generic aap-metrics-auth -n aap \
+  --from-literal=username=admin \
+  --from-literal=password="$AAP_PASS"
 ```

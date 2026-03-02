@@ -1,0 +1,101 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: aap-overview
+  namespace: grafana
+spec:
+  allowCrossNamespaceImport: false
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+  json: "{\n  \"annotations\": { \"list\": [] },\n  \"editable\": true,\n  \"fiscalYearStartMonth\": 0,\n  \"graphTooltip\": 1,\n  \"links\": [],\n  \"panels\": [\n    {\n      \"collapsed\": false,\n \
+    \     \"gridPos\": { \"h\": 1, \"w\": 24, \"x\": 0, \"y\": 0 },\n      \"title\": \"System Overview\",\n      \"type\": \"row\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\"\
+    : \"${datasource}\" },\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"thresholds\": { \"mode\": \"absolute\", \"steps\": [{\"color\": \"green\", \"value\": null}] },\n          \"mappings\"\
+    : []\n        }\n      },\n      \"gridPos\": { \"h\": 4, \"w\": 4, \"x\": 0, \"y\": 1 },\n      \"options\": { \"colorMode\": \"value\", \"graphMode\": \"none\", \"reduceOptions\": { \"calcs\": [\"\
+    lastNotNull\"] } },\n      \"targets\": [{ \"expr\": \"awx_organizations_total\", \"legendFormat\": \"\" }],\n      \"title\": \"Organizations\",\n      \"type\": \"stat\"\n    },\n    {\n      \"datasource\"\
+    : { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"thresholds\": { \"mode\": \"absolute\", \"steps\": [{\"color\": \"blue\",\
+    \ \"value\": null}] },\n          \"mappings\": []\n        }\n      },\n      \"gridPos\": { \"h\": 4, \"w\": 4, \"x\": 4, \"y\": 1 },\n      \"options\": { \"colorMode\": \"value\", \"graphMode\"\
+    : \"none\", \"reduceOptions\": { \"calcs\": [\"lastNotNull\"] } },\n      \"targets\": [{ \"expr\": \"awx_users_total\", \"legendFormat\": \"\" }],\n      \"title\": \"Users\",\n      \"type\": \"stat\"\
+    \n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"thresholds\": { \"mode\": \"absolute\"\
+    , \"steps\": [{\"color\": \"purple\", \"value\": null}] },\n          \"mappings\": []\n        }\n      },\n      \"gridPos\": { \"h\": 4, \"w\": 4, \"x\": 8, \"y\": 1 },\n      \"options\": { \"colorMode\"\
+    : \"value\", \"graphMode\": \"none\", \"reduceOptions\": { \"calcs\": [\"lastNotNull\"] } },\n      \"targets\": [{ \"expr\": \"awx_inventories_total\", \"legendFormat\": \"\" }],\n      \"title\":\
+    \ \"Inventories\",\n      \"type\": \"stat\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": {\n        \"defaults\": {\n    \
+    \      \"thresholds\": { \"mode\": \"absolute\", \"steps\": [{\"color\": \"orange\", \"value\": null}] },\n          \"mappings\": []\n        }\n      },\n      \"gridPos\": { \"h\": 4, \"w\": 4, \"\
+    x\": 12, \"y\": 1 },\n      \"options\": { \"colorMode\": \"value\", \"graphMode\": \"none\", \"reduceOptions\": { \"calcs\": [\"lastNotNull\"] } },\n      \"targets\": [{ \"expr\": \"awx_projects_total\"\
+    , \"legendFormat\": \"\" }],\n      \"title\": \"Projects\",\n      \"type\": \"stat\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\"\
+    : {\n        \"defaults\": {\n          \"thresholds\": { \"mode\": \"absolute\", \"steps\": [{\"color\": \"yellow\", \"value\": null}] },\n          \"mappings\": []\n        }\n      },\n      \"\
+    gridPos\": { \"h\": 4, \"w\": 4, \"x\": 16, \"y\": 1 },\n      \"options\": { \"colorMode\": \"value\", \"graphMode\": \"none\", \"reduceOptions\": { \"calcs\": [\"lastNotNull\"] } },\n      \"targets\"\
+    : [{ \"expr\": \"awx_job_templates_total\", \"legendFormat\": \"\" }],\n      \"title\": \"Job Templates\",\n      \"type\": \"stat\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\"\
+    , \"uid\": \"${datasource}\" },\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"thresholds\": { \"mode\": \"absolute\", \"steps\": [{\"color\": \"green\", \"value\": null}] },\n    \
+    \      \"mappings\": []\n        }\n      },\n      \"gridPos\": { \"h\": 4, \"w\": 4, \"x\": 20, \"y\": 1 },\n      \"options\": { \"colorMode\": \"value\", \"graphMode\": \"none\", \"reduceOptions\"\
+    : { \"calcs\": [\"lastNotNull\"] } },\n      \"targets\": [{ \"expr\": \"awx_schedules_total\", \"legendFormat\": \"\" }],\n      \"title\": \"Schedules\",\n      \"type\": \"stat\"\n    },\n    {\n\
+    \      \"collapsed\": false,\n      \"gridPos\": { \"h\": 1, \"w\": 24, \"x\": 0, \"y\": 5 },\n      \"title\": \"Job Status\",\n      \"type\": \"row\"\n    },\n    {\n      \"datasource\": { \"type\"\
+    : \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"thresholds\": { \"mode\": \"absolute\", \"steps\": [{\"color\": \"green\", \"value\":\
+    \ null}] },\n          \"mappings\": []\n        }\n      },\n      \"gridPos\": { \"h\": 5, \"w\": 4, \"x\": 0, \"y\": 6 },\n      \"options\": { \"colorMode\": \"value\", \"graphMode\": \"area\",\
+    \ \"reduceOptions\": { \"calcs\": [\"lastNotNull\"] } },\n      \"targets\": [{ \"expr\": \"awx_status_total{status=\\\"successful\\\"}\", \"legendFormat\": \"\" }],\n      \"title\": \"Successful Jobs\"\
+    ,\n      \"type\": \"stat\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"thresholds\"\
+    : { \"mode\": \"absolute\", \"steps\": [{\"color\": \"red\", \"value\": null}] },\n          \"mappings\": []\n        }\n      },\n      \"gridPos\": { \"h\": 5, \"w\": 4, \"x\": 4, \"y\": 6 },\n \
+    \     \"options\": { \"colorMode\": \"value\", \"graphMode\": \"area\", \"reduceOptions\": { \"calcs\": [\"lastNotNull\"] } },\n      \"targets\": [{ \"expr\": \"awx_status_total{status=\\\"failed\\\
+    \"}\", \"legendFormat\": \"\" }],\n      \"title\": \"Failed Jobs\",\n      \"type\": \"stat\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n     \
+    \ \"fieldConfig\": {\n        \"defaults\": {\n          \"thresholds\": { \"mode\": \"absolute\", \"steps\": [{\"color\": \"semi-dark-blue\", \"value\": null}] },\n          \"mappings\": []\n    \
+    \    }\n      },\n      \"gridPos\": { \"h\": 5, \"w\": 4, \"x\": 8, \"y\": 6 },\n      \"options\": { \"colorMode\": \"value\", \"graphMode\": \"area\", \"reduceOptions\": { \"calcs\": [\"lastNotNull\"\
+    ] } },\n      \"targets\": [{ \"expr\": \"awx_running_jobs_total\", \"legendFormat\": \"\" }],\n      \"title\": \"Running Jobs\",\n      \"type\": \"stat\"\n    },\n    {\n      \"datasource\": { \"\
+    type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"thresholds\": { \"mode\": \"absolute\", \"steps\": [{\"color\": \"light-yellow\"\
+    , \"value\": null}] },\n          \"mappings\": []\n        }\n      },\n      \"gridPos\": { \"h\": 5, \"w\": 4, \"x\": 12, \"y\": 6 },\n      \"options\": { \"colorMode\": \"value\", \"graphMode\"\
+    : \"area\", \"reduceOptions\": { \"calcs\": [\"lastNotNull\"] } },\n      \"targets\": [{ \"expr\": \"awx_pending_jobs_total\", \"legendFormat\": \"\" }],\n      \"title\": \"Pending Jobs\",\n     \
+    \ \"type\": \"stat\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"color\": { \"mode\"\
+    : \"palette-classic\" },\n          \"custom\": { \"fillOpacity\": 30, \"lineWidth\": 2, \"spanNulls\": true }\n        }\n      },\n      \"gridPos\": { \"h\": 5, \"w\": 8, \"x\": 16, \"y\": 6 },\n\
+    \      \"options\": { \"legend\": { \"displayMode\": \"list\", \"placement\": \"bottom\" }, \"tooltip\": { \"mode\": \"multi\" } },\n      \"targets\": [\n        { \"expr\": \"awx_status_total{status=\\\
+    \"successful\\\"}\", \"legendFormat\": \"Successful\" },\n        { \"expr\": \"awx_status_total{status=\\\"failed\\\"}\", \"legendFormat\": \"Failed\" },\n        { \"expr\": \"awx_status_total{status=\\\
+    \"error\\\"}\", \"legendFormat\": \"Error\" },\n        { \"expr\": \"awx_status_total{status=\\\"canceled\\\"}\", \"legendFormat\": \"Canceled\" }\n      ],\n      \"title\": \"Job Status Over Time\"\
+    ,\n      \"type\": \"timeseries\"\n    },\n    {\n      \"collapsed\": false,\n      \"gridPos\": { \"h\": 1, \"w\": 24, \"x\": 0, \"y\": 11 },\n      \"title\": \"Instance Capacity\",\n      \"type\"\
+    : \"row\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"color\": { \"mode\": \"thresholds\"\
+    \ },\n          \"thresholds\": { \"mode\": \"absolute\", \"steps\": [{\"color\": \"green\", \"value\": null}, {\"color\": \"yellow\", \"value\": 70}, {\"color\": \"red\", \"value\": 90}] },\n     \
+    \     \"unit\": \"percent\", \"min\": 0, \"max\": 100\n        }\n      },\n      \"gridPos\": { \"h\": 6, \"w\": 8, \"x\": 0, \"y\": 12 },\n      \"options\": { \"reduceOptions\": { \"calcs\": [\"\
+    lastNotNull\"] }, \"showThresholdMarkers\": true },\n      \"targets\": [{\n        \"expr\": \"(awx_instance_consumed_capacity / awx_instance_capacity) * 100\",\n        \"legendFormat\": \"{{ node\
+    \ }}\"\n      }],\n      \"title\": \"Capacity Usage (%)\",\n      \"type\": \"gauge\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\"\
+    : {\n        \"defaults\": {\n          \"color\": { \"mode\": \"palette-classic\" },\n          \"custom\": { \"fillOpacity\": 20, \"lineWidth\": 2, \"spanNulls\": true }\n        }\n      },\n   \
+    \   \"gridPos\": { \"h\": 6, \"w\": 8, \"x\": 8, \"y\": 12 },\n      \"options\": { \"legend\": { \"displayMode\": \"list\", \"placement\": \"bottom\" }, \"tooltip\": { \"mode\": \"multi\" } },\n  \
+    \    \"targets\": [\n        { \"expr\": \"awx_instance_capacity\", \"legendFormat\": \"Total - {{ node }}\" },\n        { \"expr\": \"awx_instance_consumed_capacity\", \"legendFormat\": \"Consumed\
+    \ - {{ node }}\" },\n        { \"expr\": \"awx_instance_remaining_capacity\", \"legendFormat\": \"Remaining - {{ node }}\" }\n      ],\n      \"title\": \"Instance Capacity Over Time\",\n      \"type\"\
+    : \"timeseries\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"color\": { \"mode\":\
+    \ \"palette-classic\" },\n          \"custom\": { \"fillOpacity\": 20, \"lineWidth\": 2, \"spanNulls\": true }\n        }\n      },\n      \"gridPos\": { \"h\": 6, \"w\": 8, \"x\": 16, \"y\": 12 },\n\
+    \      \"options\": { \"legend\": { \"displayMode\": \"list\", \"placement\": \"bottom\" }, \"tooltip\": { \"mode\": \"multi\" } },\n      \"targets\": [\n        { \"expr\": \"awx_instance_launch_type_total\"\
+    , \"legendFormat\": \"{{ launch_type }} - {{ node }}\" }\n      ],\n      \"title\": \"Jobs by Launch Type\",\n      \"type\": \"timeseries\"\n    },\n    {\n      \"collapsed\": false,\n      \"gridPos\"\
+    : { \"h\": 1, \"w\": 24, \"x\": 0, \"y\": 18 },\n      \"title\": \"Hosts & License\",\n      \"type\": \"row\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\"\
+    \ },\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"color\": { \"mode\": \"thresholds\" },\n          \"thresholds\": { \"mode\": \"absolute\", \"steps\": [{\"color\": \"green\", \"\
+    value\": null}, {\"color\": \"yellow\", \"value\": 80}, {\"color\": \"red\", \"value\": 95}] },\n          \"unit\": \"percent\", \"min\": 0, \"max\": 100\n        }\n      },\n      \"gridPos\": {\
+    \ \"h\": 6, \"w\": 8, \"x\": 0, \"y\": 19 },\n      \"options\": { \"reduceOptions\": { \"calcs\": [\"lastNotNull\"] }, \"showThresholdMarkers\": true },\n      \"targets\": [{\n        \"expr\": \"\
+    ((awx_license_instance_total - awx_license_instance_free) / awx_license_instance_total) * 100\",\n        \"legendFormat\": \"Used\"\n      }],\n      \"title\": \"License Usage (%)\",\n      \"type\"\
+    : \"gauge\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"thresholds\": { \"mode\":\
+    \ \"absolute\", \"steps\": [{\"color\": \"green\", \"value\": null}] },\n          \"mappings\": []\n        }\n      },\n      \"gridPos\": { \"h\": 3, \"w\": 4, \"x\": 8, \"y\": 19 },\n      \"options\"\
+    : { \"colorMode\": \"value\", \"graphMode\": \"none\", \"reduceOptions\": { \"calcs\": [\"lastNotNull\"] } },\n      \"targets\": [{ \"expr\": \"awx_hosts_total{type=\\\"all\\\"}\", \"legendFormat\"\
+    : \"\" }],\n      \"title\": \"Total Hosts\",\n      \"type\": \"stat\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": {\n  \
+    \      \"defaults\": {\n          \"thresholds\": { \"mode\": \"absolute\", \"steps\": [{\"color\": \"green\", \"value\": null}] },\n          \"mappings\": []\n        }\n      },\n      \"gridPos\"\
+    : { \"h\": 3, \"w\": 4, \"x\": 12, \"y\": 19 },\n      \"options\": { \"colorMode\": \"value\", \"graphMode\": \"none\", \"reduceOptions\": { \"calcs\": [\"lastNotNull\"] } },\n      \"targets\": [{\
+    \ \"expr\": \"awx_hosts_total{type=\\\"active\\\"}\", \"legendFormat\": \"\" }],\n      \"title\": \"Active Hosts\",\n      \"type\": \"stat\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\"\
+    , \"uid\": \"${datasource}\" },\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"thresholds\": { \"mode\": \"absolute\", \"steps\": [{\"color\": \"green\", \"value\": null}] },\n    \
+    \      \"mappings\": []\n        }\n      },\n      \"gridPos\": { \"h\": 3, \"w\": 4, \"x\": 8, \"y\": 22 },\n      \"options\": { \"colorMode\": \"value\", \"graphMode\": \"none\", \"reduceOptions\"\
+    : { \"calcs\": [\"lastNotNull\"] } },\n      \"targets\": [{ \"expr\": \"awx_license_instance_total\", \"legendFormat\": \"\" }],\n      \"title\": \"Licensed Hosts\",\n      \"type\": \"stat\"\n  \
+    \  },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"thresholds\": { \"mode\": \"absolute\",\
+    \ \"steps\": [{\"color\": \"green\", \"value\": null}] },\n          \"mappings\": []\n        }\n      },\n      \"gridPos\": { \"h\": 3, \"w\": 4, \"x\": 12, \"y\": 22 },\n      \"options\": { \"\
+    colorMode\": \"value\", \"graphMode\": \"none\", \"reduceOptions\": { \"calcs\": [\"lastNotNull\"] } },\n      \"targets\": [{ \"expr\": \"awx_license_instance_free\", \"legendFormat\": \"\" }],\n \
+    \     \"title\": \"License Free\",\n      \"type\": \"stat\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": {\n        \"defaults\"\
+    : {\n          \"color\": { \"mode\": \"palette-classic\" },\n          \"custom\": { \"fillOpacity\": 20, \"lineWidth\": 2, \"spanNulls\": true }\n        }\n      },\n      \"gridPos\": { \"h\": 6,\
+    \ \"w\": 8, \"x\": 16, \"y\": 19 },\n      \"options\": { \"legend\": { \"displayMode\": \"list\", \"placement\": \"bottom\" }, \"tooltip\": { \"mode\": \"multi\" } },\n      \"targets\": [\n      \
+    \  { \"expr\": \"awx_database_connections_total\", \"legendFormat\": \"DB Connections\" }\n      ],\n      \"title\": \"Database Connections\",\n      \"type\": \"timeseries\"\n    },\n    {\n     \
+    \ \"collapsed\": false,\n      \"gridPos\": { \"h\": 1, \"w\": 24, \"x\": 0, \"y\": 25 },\n      \"title\": \"Task Manager Internals\",\n      \"type\": \"row\"\n    },\n    {\n      \"datasource\"\
+    : { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"color\": { \"mode\": \"palette-classic\" },\n          \"custom\": { \"fillOpacity\"\
+    : 10, \"lineWidth\": 2, \"spanNulls\": true },\n          \"unit\": \"s\"\n        }\n      },\n      \"gridPos\": { \"h\": 7, \"w\": 12, \"x\": 0, \"y\": 26 },\n      \"options\": { \"legend\": { \"\
+    displayMode\": \"list\", \"placement\": \"bottom\" }, \"tooltip\": { \"mode\": \"multi\" } },\n      \"targets\": [\n        { \"expr\": \"task_manager__schedule_seconds\", \"legendFormat\": \"Schedule\"\
+    \ },\n        { \"expr\": \"task_manager_get_tasks_seconds\", \"legendFormat\": \"Get Tasks\" },\n        { \"expr\": \"task_manager_start_task_seconds\", \"legendFormat\": \"Start Task\" },\n     \
+    \   { \"expr\": \"task_manager_commit_seconds\", \"legendFormat\": \"Commit\" }\n      ],\n      \"title\": \"Task Manager Timing\",\n      \"type\": \"timeseries\"\n    },\n    {\n      \"datasource\"\
+    : { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"color\": { \"mode\": \"palette-classic\" },\n          \"custom\": { \"fillOpacity\"\
+    : 10, \"lineWidth\": 2, \"spanNulls\": true }\n        }\n      },\n      \"gridPos\": { \"h\": 7, \"w\": 12, \"x\": 12, \"y\": 26 },\n      \"options\": { \"legend\": { \"displayMode\": \"list\", \"\
+    placement\": \"bottom\" }, \"tooltip\": { \"mode\": \"multi\" } },\n      \"targets\": [\n        { \"expr\": \"callback_receiver_events_queue_size_redis\", \"legendFormat\": \"Queue Size (Redis)\"\
+    \ },\n        { \"expr\": \"callback_receiver_events_in_memory\", \"legendFormat\": \"Events in Memory\" },\n        { \"expr\": \"rate(callback_receiver_events_insert_db[5m])\", \"legendFormat\": \"\
+    Insert Rate (/s)\" }\n      ],\n      \"title\": \"Callback Receiver\",\n      \"type\": \"timeseries\"\n    }\n  ],\n  \"refresh\": \"1m\",\n  \"schemaVersion\": 39,\n  \"tags\": [\"aap\", \"ansible\"\
+    , \"automation\"],\n  \"templating\": {\n    \"list\": [{\n      \"current\": { \"selected\": false, \"text\": \"Prometheus-OCP\", \"value\": \"Prometheus-OCP\" },\n      \"hide\": 0,\n      \"includeAll\"\
+    : false,\n      \"label\": \"Data Source\",\n      \"name\": \"datasource\",\n      \"query\": \"prometheus\",\n      \"type\": \"datasource\"\n    }]\n  },\n  \"time\": { \"from\": \"now-24h\", \"\
+    to\": \"now\" },\n  \"title\": \"Ansible Automation Platform - Overview\",\n  \"uid\": \"aap-overview\"\n}\n"
+

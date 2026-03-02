@@ -1,0 +1,41 @@
+# AAP metrics scraping via ServiceMonitor
+# Requires a Secret 'aap-metrics-auth' in aap namespace with admin credentials
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aap-metrics
+  namespace: aap
+  labels:
+    app: aap-metrics
+spec:
+  selector:
+    app.kubernetes.io/component: aap-gateway
+    app.kubernetes.io/name: aap
+  ports:
+    - name: metrics
+      port: 80
+      targetPort: 8000
+      protocol: TCP
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: aap-metrics
+  namespace: aap
+spec:
+  selector:
+    matchLabels:
+      app: aap-metrics
+  endpoints:
+    - port: metrics
+      path: /api/controller/v2/metrics/
+      interval: 60s
+      scheme: http
+      basicAuth:
+        username:
+          name: aap-metrics-auth
+          key: username
+        password:
+          name: aap-metrics-auth
+          key: password
