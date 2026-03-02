@@ -1,4 +1,4 @@
-# Grafana instance with OCP route
+# Grafana instance with Google OAuth OIDC and OCP route
 ---
 apiVersion: grafana.integreatly.org/v1beta1
 kind: Grafana
@@ -8,17 +8,37 @@ metadata:
   labels:
     dashboards: grafana
 spec:
-  # Admin credentials are stored in Vault at secret/ocp/grafana
-  # Set GF_SECURITY_ADMIN_PASSWORD via the deployment env or Grafana UI after first login
   config:
     auth:
       disable_login_form: "false"
     auth.anonymous:
       enabled: "false"
+    auth.google:
+      enabled: "true"
+      allow_sign_up: "true"
+      auto_login: "false"
+      scopes: openid email profile
+      auth_url: https://accounts.google.com/o/oauth2/v2/auth
+      token_url: https://oauth2.googleapis.com/token
+      api_url: https://openidconnect.googleapis.com/v1/userinfo
+      allowed_domains: redhat.com
+      role_attribute_path: "email == 'bkaraore@redhat.com' && 'GrafanaAdmin' || 'Viewer'"
+      allow_assign_grafana_admin: "true"
     security:
       admin_user: admin
     server:
-      root_url: https://grafana-grafana.apps.ocp.karaoren.eu
+      root_url: https://grafana-route-grafana.apps.ocp.karaoren.eu
+    users:
+      auto_assign_org_role: Viewer
+  deployment:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: grafana
+              envFrom:
+                - secretRef:
+                    name: grafana-google-oauth
   route:
     spec:
       tls:

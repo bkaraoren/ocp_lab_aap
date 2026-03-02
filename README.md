@@ -1244,6 +1244,8 @@ All secrets are stored in HashiCorp Vault under organized paths. No sensitive va
 | `secret/dns/namecom` | name.com API username & token | Certificate renewal (acme.sh), AAP Vault Lookup |
 | `secret/vault/root` | Vault root token | AAP Vault Lookup (cert renewal) |
 | `secret/ocp/cert-renewal-sa` | OCP ServiceAccount bearer token & API host | AAP Vault Lookup (cert renewal) |
+| `secret/ocp/grafana` | Grafana admin username & password | Grafana fallback admin login |
+| `secret/ocp/grafana-oauth` | Google OAuth client_id & client_secret | Grafana Google OIDC login |
 
 ### 12.2 Retrieving Secrets from Vault
 
@@ -2497,21 +2499,31 @@ AAP Controller (gateway) → /api/controller/v2/metrics/ (Prometheus format)
 | Component | Namespace | Description |
 |-----------|-----------|-------------|
 | Grafana Operator v5 | `grafana` | Community operator from OperatorHub |
-| Grafana Instance | `grafana` | Grafana server with OCP route |
+| Grafana Instance | `grafana` | Grafana server with OCP route + Google OIDC |
 | ServiceAccount `grafana-sa` | `grafana` | Bound to `cluster-monitoring-view` ClusterRole |
+| Secret `grafana-google-oauth` | `grafana` | Google OAuth client_id/client_secret (injected as env vars) |
 | Service `aap-metrics` | `aap` | Targets AAP gateway pods on port 8000 |
 | ServiceMonitor `aap-metrics` | `aap` | Scrapes `/api/controller/v2/metrics/` with basicAuth |
 | Secret `aap-metrics-auth` | `aap` | AAP admin credentials for metrics endpoint auth |
 | GrafanaDatasource `prometheus-ocp` | `grafana` | Thanos querier with SA bearer token |
 | GrafanaDashboard `aap-overview` | `grafana` | AAP Overview dashboard |
+| GrafanaDashboard `ocp-cluster-overview` | `grafana` | OCP Cluster Overview dashboard |
+| GrafanaDashboard `ocp-virtualization` | `grafana` | OCP Virtualization (CNV) dashboard |
 
-### 21.3 Access
+### 21.3 Access & Authentication
 
 | Setting | Value |
 |---------|-------|
 | **URL** | `https://grafana-route-grafana.apps.ocp.karaoren.eu` |
-| **Username** | `admin` |
-| **Password** | Stored in Vault at `secret/ocp/grafana` (key: `admin_password`) |
+| **Login** | Google OIDC (same provider as OCP, AAP, Vault) |
+| **Allowed Domain** | `redhat.com` |
+| **Admin** | `bkaraore@redhat.com` → GrafanaAdmin (via `role_attribute_path`) |
+| **Other users** | Any `@redhat.com` → Viewer role |
+| **Fallback** | `admin` / password in Vault at `secret/ocp/grafana` |
+| **OAuth Credentials** | Stored in Vault at `secret/ocp/grafana-oauth` |
+| **Callback URL** | `https://grafana-route-grafana.apps.ocp.karaoren.eu/login/google` |
+
+> **Google Cloud Console:** The Grafana callback URL above must be registered as an authorized redirect URI in the same OAuth 2.0 client used by OCP, AAP, and Vault (project `775961166307`).
 
 ### 21.4 AAP Metrics Available
 
