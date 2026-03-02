@@ -26,6 +26,7 @@
 16. [AAP Execution Node (RHEL 9 VM)](#16-aap-execution-node-rhel-9-vm)
 17. [Node System Tuning (Kubelet Reserved Resources)](#17-node-system-tuning-kubelet-reserved-resources)
 18. [Static IP Configuration (Hetzner DHCP Deprecation)](#18-static-ip-configuration-hetzner-dhcp-deprecation)
+19. [AAP Credential Lookup via HashiCorp Vault](#19-aap-credential-lookup-via-hashicorp-vault)
 
 ---
 
@@ -1238,7 +1239,9 @@ All secrets are stored in HashiCorp Vault under organized paths. No sensitive va
 | `secret/vault/tokens` | Root token, unseal key, AAP service token | Vault administration |
 | `secret/letsencrypt/certs` | Private key, fullchain, CA cert (base64) | OCP Ingress & API TLS |
 | `secret/registry/pull-secret` | `dockerconfigjson` for `registry.redhat.io` (base64) | Portal OCI plugin pulls |
-| `secret/dns/namecom` | name.com API username & token | Certificate renewal (acme.sh) |
+| `secret/dns/namecom` | name.com API username & token | Certificate renewal (acme.sh), AAP Vault Lookup |
+| `secret/vault/root` | Vault root token | AAP Vault Lookup (cert renewal) |
+| `secret/ocp/cert-renewal-sa` | OCP ServiceAccount bearer token & API host | AAP Vault Lookup (cert renewal) |
 
 ### 12.2 Retrieving Secrets from Vault
 
@@ -1337,7 +1340,9 @@ All credentials are now stored in Vault. Use the commands below to retrieve them
 | Registry Pull Secret | `secret/registry/pull-secret` | `dockerconfigjson` | ✅ → `rhdh-pull-secret` (aap-portal) |
 | Let's Encrypt Certs | `secret/letsencrypt/certs` | `fullchain_b64`, `private_key_b64` | ✅ → `letsencrypt-wildcard` (openshift-ingress) |
 | Let's Encrypt API Certs | `secret/letsencrypt/certs` | `fullchain_b64`, `private_key_b64` | ✅ → `letsencrypt-api` (openshift-config) |
-| name.com API Token | `secret/dns/namecom` | `api_token` | ❌ (local acme.sh only) |
+| name.com API Token | `secret/dns/namecom` | `api_token` | ✅ → AAP Vault Lookup (LE Renewal credential) |
+| Vault Root Token | `secret/vault/root` | `root_token` | ✅ → AAP Vault Lookup (LE Renewal credential) |
+| OCP SA Bearer Token | `secret/ocp/cert-renewal-sa` | `bearer_token` | ✅ → AAP Vault Lookup (OCP Cluster credential) |
 
 > ✅ **Vault is the single source of truth.** Secrets marked with ✅ are automatically synced to OCP via the External Secrets Operator (ESO) every hour. To rotate a secret, update it in Vault and ESO will propagate the change. Secrets marked ❌ are stored in Vault as a backup/reference but are managed by their respective operators or CRDs in OCP.
 
@@ -1596,15 +1601,16 @@ Schedule (every 60 days) → Job Template → renew-certificates.yml
 
 ### 15.2 AAP Resources Created
 
-| Resource | Name | ID |
-|---|---|---|
-| Custom Credential Type | `Let's Encrypt Renewal Credentials` | 32 |
-| Credential (custom) | `LE Renewal - name.com + Vault` | 3 |
-| Credential (K8s) | `OCP Cluster - cert-renewal SA` | 4 |
-| Project | `OCP Lab - Certificate Management` | 10 |
-| Inventory | `Localhost` | 2 |
-| Job Template | `Renew Let's Encrypt Certificates` | 11 |
-| Schedule | `Every 60 days - Certificate Renewal` | 6 |
+| Resource | Name | ID | Notes |
+|---|---|---|---|
+| Custom Credential Type | `Let's Encrypt Renewal Credentials` | 32 | |
+| Credential (external) | `HashiCorp Vault Lookup` | 5 | Source credential for all Vault lookups |
+| Credential (custom) | `LE Renewal - name.com + Vault` | 3 | Secret fields via Vault Lookup |
+| Credential (K8s) | `OCP Cluster - cert-renewal SA` | 4 | Bearer token via Vault Lookup |
+| Project | `OCP Lab - Certificate Management` | 10 | |
+| Inventory | `Localhost` | 2 | |
+| Job Template | `Renew Let's Encrypt Certificates` | 11 | |
+| Schedule | `Every 60 days - Certificate Renewal` | 6 | |
 
 ### 15.3 Custom Credential Type
 
@@ -1662,7 +1668,7 @@ metadata:
 type: kubernetes.io/service-account-token
 ```
 
-An "OpenShift or Kubernetes API Bearer Token" credential (type 17) is created in AAP using this SA token, and associated with the Job Template. The playbook automatically logs in using the injected `K8S_AUTH_HOST` and `K8S_AUTH_API_KEY` environment variables.
+An "OpenShift or Kubernetes API Bearer Token" credential (type 17) is created in AAP and associated with the Job Template. The `bearer_token` field is dynamically fetched from Vault (`secret/ocp/cert-renewal-sa`) via the HashiCorp Vault Lookup credential at job runtime. The playbook automatically logs in using the injected `K8S_AUTH_HOST` and `K8S_AUTH_API_KEY` environment variables.
 
 ### 15.6 Current Certificate Status
 
@@ -1713,15 +1719,16 @@ ansible-playbook playbooks/setup-cert-renewal-job.yml \
 
 ### 15.10 AAP Resources Summary
 
-| Resource | Name | ID |
-|---|---|---|
-| Custom Credential Type | `Let's Encrypt Renewal Credentials` | 32 |
-| Credential (custom) | `LE Renewal - name.com + Vault` | 3 |
-| Credential (K8s) | `OCP Cluster - cert-renewal SA` | 4 |
-| Project | `OCP Lab - Certificate Management` | 10 |
-| Inventory | `Localhost` | 2 |
-| Job Template | `Renew Let's Encrypt Certificates` | 11 |
-| Schedule | `Every 60 days - Certificate Renewal` | 6 |
+| Resource | Name | ID | Notes |
+|---|---|---|---|
+| Custom Credential Type | `Let's Encrypt Renewal Credentials` | 32 | |
+| Credential (external) | `HashiCorp Vault Lookup` | 5 | Source credential for all Vault lookups |
+| Credential (custom) | `LE Renewal - name.com + Vault` | 3 | Secret fields via Vault Lookup |
+| Credential (K8s) | `OCP Cluster - cert-renewal SA` | 4 | Bearer token via Vault Lookup |
+| Project | `OCP Lab - Certificate Management` | 10 | |
+| Inventory | `Localhost` | 2 | |
+| Job Template | `Renew Let's Encrypt Certificates` | 11 | |
+| Schedule | `Every 60 days - Certificate Renewal` | 6 | |
 
 ### 15.11 Resource Operator CRs (GitOps)
 
@@ -2342,3 +2349,78 @@ oc debug node/hercules.ocp.karaoren.eu -- chroot /host ip route show default
 |------|-------------|
 | `gitops/operators/nmstate/subscription.yaml` | NMState operator Namespace, OperatorGroup, Subscription, and NMState instance CR |
 | `gitops/cluster/network/static-ip-nncp.yaml` | NodeNetworkConfigurationPolicy for static IP |
+
+---
+
+## 19. AAP Credential Lookup via HashiCorp Vault
+
+**Date:** March 2, 2026  
+**Purpose:** Eliminate static secrets stored in AAP credentials by dynamically fetching them from HashiCorp Vault at job runtime using the built-in **HashiCorp Vault Secret Lookup** external credential type.
+
+### 19.1 Architecture
+
+```
+AAP Job Launch
+  → Credential resolution phase
+    → "HashiCorp Vault Lookup" (ID 5) authenticates to Vault
+    → Fetches secret values from Vault KV v2 paths
+    → Injects resolved values into target credentials
+  → Job runs with dynamically resolved secrets
+```
+
+### 19.2 Vault Lookup Credential
+
+| Setting | Value |
+|---------|-------|
+| **Name** | `HashiCorp Vault Lookup` |
+| **AAP ID** | 5 |
+| **Type** | HashiCorp Vault Secret Lookup (ID 28, built-in) |
+| **Vault URL** | `https://vault.apps.ocp.karaoren.eu` |
+| **Auth Method** | Token (AAP Integration Token) |
+| **API Version** | v2 |
+
+### 19.3 Credential Linkages
+
+All secret fields in the following credentials are now dynamically resolved from Vault. Static secret values have been removed from AAP.
+
+**LE Renewal - name.com + Vault (ID 3):**
+
+| Field | Vault Path | Vault Key |
+|-------|-----------|-----------|
+| `namecom_api_token` | `secret/dns/namecom` | `api_token` |
+| `vault_root_token` | `secret/vault/root` | `root_token` |
+
+> `namecom_username` remains as a static (non-secret) value: `bkaraoren@web.de`
+
+**OCP Cluster - cert-renewal SA (ID 4):**
+
+| Field | Vault Path | Vault Key |
+|-------|-----------|-----------|
+| `bearer_token` | `secret/ocp/cert-renewal-sa` | `bearer_token` |
+
+> `host` and `verify_ssl` remain as static (non-secret) values.
+
+### 19.4 Vault Paths Added
+
+| Path | Keys | Purpose |
+|------|------|---------|
+| `secret/vault/root` | `root_token` | Vault root token for cert renewal playbook |
+| `secret/ocp/cert-renewal-sa` | `bearer_token`, `host` | OCP ServiceAccount token for cert renewal |
+
+> `secret/dns/namecom` already existed with `username` and `api_token`.
+
+### 19.5 Benefits
+
+- **Single source of truth:** All secrets live in Vault; AAP never stores them statically.
+- **Automatic rotation:** Updating a secret in Vault is immediately picked up by the next AAP job run — no credential edits needed in AAP.
+- **Audit trail:** Vault audit log tracks every secret access by AAP.
+- **Reduced blast radius:** If AAP is compromised, the attacker cannot extract the actual secret values from the AAP database.
+
+### 19.6 Adding New Vault-Backed Credentials
+
+To link any new AAP credential field to Vault:
+
+1. Store the secret in Vault: `vault kv put secret/<path> <key>=<value>`
+2. In AAP UI: edit the credential, click the key icon next to the secret field
+3. Select `HashiCorp Vault Lookup` as the source credential
+4. Set metadata: **Secret Backend** = `secret`, **Path to Secret** = `<path>`, **Key Name** = `<key>`, **API Version** = v2
