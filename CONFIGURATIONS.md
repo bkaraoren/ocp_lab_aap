@@ -25,6 +25,7 @@
 15. [Automated Certificate Renewal (AAP Scheduled Job)](#15-automated-certificate-renewal-aap-scheduled-job)
 16. [AAP Execution Node (RHEL 9 VM)](#16-aap-execution-node-rhel-9-vm)
 17. [Node System Tuning (Kubelet Reserved Resources)](#17-node-system-tuning-kubelet-reserved-resources)
+18. [Static IP Configuration (Hetzner DHCP Deprecation)](#18-static-ip-configuration-hetzner-dhcp-deprecation)
 
 ---
 
@@ -2243,3 +2244,101 @@ oc debug node/hercules.ocp.karaoren.eu -- chroot /host cat /etc/kubernetes/kubel
 | **Ephemeral Storage** | 0 | 1 GiB |
 
 > **Tip:** If the alert returns after increasing to 2 GiB, further increase to 2.5 or 3 GiB. Monitor actual system usage with: `oc adm top node`.
+
+---
+
+## 18. Static IP Configuration (Hetzner DHCP Deprecation)
+
+**Date:** March 2, 2026  
+**Reason:** Hetzner is deprecating DHCP for public IP assignment on dedicated servers. The node's primary network interface was switched from DHCP to static IP using the NMState operator.
+
+### 18.1 Background
+
+The SNO node `hercules.ocp.karaoren.eu` used DHCP (`ipv4.method: auto`) on the `ovs-if-br-ex` NetworkManager connection (OVS bridge `br-ex`, physical NIC `enp4s0`). The actual IP address, gateway, and DNS values remain unchanged — only the assignment method changed from DHCP to static.
+
+### 18.2 Network Configuration
+
+| Setting | Value |
+|---------|-------|
+| **IP Address** | `94.130.132.59/26` |
+| **Gateway** | `94.130.132.1` |
+| **DNS Servers** | `185.12.64.1`, `185.12.64.2` |
+| **Physical NIC** | `enp4s0` |
+| **OVS Bridge** | `br-ex` |
+| **NM Connection** | `ovs-if-br-ex` |
+| **Method (before)** | `auto` (DHCP) |
+| **Method (after)** | `manual` (static) |
+
+### 18.3 NMState Operator
+
+The Kubernetes NMState Operator was installed to manage the network configuration declaratively via `NodeNetworkConfigurationPolicy` (NNCP) CRs.
+
+```bash
+# Verify operator
+oc get csv -n openshift-nmstate
+
+# Verify handler pods
+oc get pods -n openshift-nmstate
+```
+
+**Safety feature:** NMState creates a NetworkManager checkpoint before applying changes. If connectivity is lost and the handler cannot confirm success, NetworkManager automatically rolls back the configuration (~4 minute timeout).
+
+### 18.4 NodeNetworkConfigurationPolicy
+
+The NNCP `static-ip-br-ex` configures the `br-ex` OVS interface with static IPv4:
+
+```yaml
+apiVersion: nmstate.io/v1
+kind: NodeNetworkConfigurationPolicy
+metadata:
+  name: static-ip-br-ex
+spec:
+  nodeSelector:
+    kubernetes.io/hostname: hercules.ocp.karaoren.eu
+  desiredState:
+    interfaces:
+      - name: br-ex
+        type: ovs-interface
+        state: up
+        ipv4:
+          enabled: true
+          dhcp: false
+          address:
+            - ip: 94.130.132.59
+              prefix-length: 26
+    routes:
+      config:
+        - destination: 0.0.0.0/0
+          next-hop-address: 94.130.132.1
+          next-hop-interface: br-ex
+    dns-resolver:
+      config:
+        server:
+          - 185.12.64.1
+          - 185.12.64.2
+        search:
+          - ocp.karaoren.eu
+```
+
+### 18.5 Verification
+
+```bash
+# NNCP status (should show Available / SuccessfullyConfigured)
+oc get nncp static-ip-br-ex
+
+# Confirm static method
+oc debug node/hercules.ocp.karaoren.eu -- chroot /host \
+  nmcli -t -f ipv4.method connection show ovs-if-br-ex
+# Expected: manual
+
+# Confirm default route is static (not dhcp)
+oc debug node/hercules.ocp.karaoren.eu -- chroot /host ip route show default
+# Expected: default via 94.130.132.1 dev br-ex proto static
+```
+
+### 18.6 GitOps Manifests
+
+| File | Description |
+|------|-------------|
+| `gitops/operators/nmstate/subscription.yaml` | NMState operator Namespace, OperatorGroup, Subscription, and NMState instance CR |
+| `gitops/cluster/network/static-ip-nncp.yaml` | NodeNetworkConfigurationPolicy for static IP |

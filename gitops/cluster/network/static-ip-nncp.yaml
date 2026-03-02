@@ -1,0 +1,34 @@
+# Static IP configuration for Hetzner dedicated server
+# Replaces DHCP on br-ex OVS interface with static addressing
+# Required because Hetzner is deprecating DHCP for public IP assignment
+---
+apiVersion: nmstate.io/v1
+kind: NodeNetworkConfigurationPolicy
+metadata:
+  name: static-ip-br-ex
+spec:
+  nodeSelector:
+    kubernetes.io/hostname: hercules.ocp.karaoren.eu
+  desiredState:
+    interfaces:
+      - name: br-ex
+        type: ovs-interface
+        state: up
+        ipv4:
+          enabled: true
+          dhcp: false
+          address:
+            - ip: 94.130.132.59
+              prefix-length: 26
+    routes:
+      config:
+        - destination: 0.0.0.0/0
+          next-hop-address: 94.130.132.1
+          next-hop-interface: br-ex
+    dns-resolver:
+      config:
+        server:
+          - 185.12.64.1
+          - 185.12.64.2
+        search:
+          - ocp.karaoren.eu

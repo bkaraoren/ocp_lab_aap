@@ -1,4 +1,5 @@
 info.txt
+CONFIGURATIONS.md
 INCIDENT-*.md
 
 # Ansible secrets (ansible-vault encrypted)
