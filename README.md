@@ -27,6 +27,7 @@
 17. [Node System Tuning (Kubelet Reserved Resources)](#17-node-system-tuning-kubelet-reserved-resources)
 18. [Static IP Configuration (Hetzner DHCP Deprecation)](#18-static-ip-configuration-hetzner-dhcp-deprecation)
 19. [AAP Credential Lookup via HashiCorp Vault](#19-aap-credential-lookup-via-hashicorp-vault)
+20. [AAP Slack Notification Template](#20-aap-slack-notification-template)
 
 ---
 
@@ -2424,3 +2425,51 @@ To link any new AAP credential field to Vault:
 2. In AAP UI: edit the credential, click the key icon next to the secret field
 3. Select `HashiCorp Vault Lookup` as the source credential
 4. Set metadata: **Secret Backend** = `secret`, **Path to Secret** = `<path>`, **Key Name** = `<key>`, **API Version** = v2
+
+---
+
+## 20. AAP Slack Notification Template
+
+**Date:** March 2, 2026  
+**Purpose:** Send Slack notifications when AAP job templates start, succeed, or fail.
+
+### 20.1 Configuration
+
+| Setting | Value |
+|---------|-------|
+| **Name** | `Slack - OCP Alerts` |
+| **AAP ID** | 3 |
+| **Type** | Mattermost (Slack incoming webhook compatible) |
+| **Webhook URL** | Slack incoming webhook (stored in Vault at `secret/ocp/slack`) |
+| **Channel** | `#ocp-alerts` |
+
+> The Mattermost notification type is used because it sends `{"text": "..."}` payloads compatible with Slack incoming webhooks. The native AAP Slack type requires a Bot API token (`xoxb-...`), not a webhook URL.
+
+### 20.2 Attached Job Templates
+
+| Job Template | On Start | On Success | On Error |
+|---|---|---|---|
+| Renew Lets Encrypt Certificates (ID 11) | Yes | Yes | Yes |
+
+### 20.3 Attaching to Other Job Templates
+
+From the AAP UI:
+1. Navigate to **Resources** > **Templates** > select a job template
+2. Go to the **Notifications** tab
+3. Toggle on `Slack - OCP Alerts` for **Start**, **Success**, and/or **Error**
+
+From the CLI:
+
+```bash
+AAP_URL="https://aap-aap.apps.ocp.karaoren.eu"
+
+# Attach to a job template (replace JT_ID with the job template ID)
+curl -sk -X POST "$AAP_URL/api/controller/v2/job_templates/<JT_ID>/notification_templates_started/" \
+  -u "admin:<password>" -H "Content-Type: application/json" -d '{"id": 3}'
+
+curl -sk -X POST "$AAP_URL/api/controller/v2/job_templates/<JT_ID>/notification_templates_success/" \
+  -u "admin:<password>" -H "Content-Type: application/json" -d '{"id": 3}'
+
+curl -sk -X POST "$AAP_URL/api/controller/v2/job_templates/<JT_ID>/notification_templates_error/" \
+  -u "admin:<password>" -H "Content-Type: application/json" -d '{"id": 3}'
+```
