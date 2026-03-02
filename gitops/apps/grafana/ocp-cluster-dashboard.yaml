@@ -1,0 +1,81 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: ocp-cluster-overview
+  namespace: grafana
+spec:
+  allowCrossNamespaceImport: false
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+  json: "{\n  \"annotations\": { \"list\": [] },\n  \"editable\": true,\n  \"graphTooltip\": 1,\n  \"panels\": [\n    {\n      \"collapsed\": false,\n      \"gridPos\": { \"h\": 1, \"w\": 24, \"x\": 0,\
+    \ \"y\": 0 },\n      \"title\": \"Cluster Overview\",\n      \"type\": \"row\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\"\
+    : { \"defaults\": { \"thresholds\": { \"steps\": [{\"color\": \"green\", \"value\": null}] } } },\n      \"gridPos\": { \"h\": 4, \"w\": 4, \"x\": 0, \"y\": 1 },\n      \"options\": { \"colorMode\"\
+    : \"value\", \"graphMode\": \"none\", \"reduceOptions\": { \"calcs\": [\"lastNotNull\"] } },\n      \"targets\": [{ \"expr\": \"count(kube_node_info)\", \"legendFormat\": \"\" }],\n      \"title\":\
+    \ \"Nodes\",\n      \"type\": \"stat\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": { \"defaults\": { \"thresholds\": { \"\
+    steps\": [{\"color\": \"blue\", \"value\": null}] } } },\n      \"gridPos\": { \"h\": 4, \"w\": 4, \"x\": 4, \"y\": 1 },\n      \"options\": { \"colorMode\": \"value\", \"graphMode\": \"none\", \"reduceOptions\"\
+    : { \"calcs\": [\"lastNotNull\"] } },\n      \"targets\": [{ \"expr\": \"count(kube_namespace_created)\", \"legendFormat\": \"\" }],\n      \"title\": \"Namespaces\",\n      \"type\": \"stat\"\n   \
+    \ },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": { \"defaults\": { \"thresholds\": { \"steps\": [{\"color\": \"purple\", \"value\"\
+    : null}] } } },\n      \"gridPos\": { \"h\": 4, \"w\": 4, \"x\": 8, \"y\": 1 },\n      \"options\": { \"colorMode\": \"value\", \"graphMode\": \"none\", \"reduceOptions\": { \"calcs\": [\"lastNotNull\"\
+    ] } },\n      \"targets\": [{ \"expr\": \"count(kube_pod_info)\", \"legendFormat\": \"\" }],\n      \"title\": \"Total Pods\",\n      \"type\": \"stat\"\n    },\n    {\n      \"datasource\": { \"type\"\
+    : \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": { \"defaults\": { \"thresholds\": { \"steps\": [{\"color\": \"green\", \"value\": null}, {\"color\": \"red\", \"value\": 1}] }\
+    \ } },\n      \"gridPos\": { \"h\": 4, \"w\": 4, \"x\": 12, \"y\": 1 },\n      \"options\": { \"colorMode\": \"value\", \"graphMode\": \"none\", \"reduceOptions\": { \"calcs\": [\"lastNotNull\"] } },\n\
+    \      \"targets\": [{ \"expr\": \"count(kube_pod_status_phase{phase=\\\"Failed\\\"})\", \"legendFormat\": \"\" }],\n      \"title\": \"Failed Pods\",\n      \"type\": \"stat\"\n    },\n    {\n    \
+    \  \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": { \"defaults\": { \"thresholds\": { \"steps\": [{\"color\": \"orange\", \"value\": null}] }, \"unit\"\
+    : \"short\" } },\n      \"gridPos\": { \"h\": 4, \"w\": 4, \"x\": 16, \"y\": 1 },\n      \"options\": { \"colorMode\": \"value\", \"graphMode\": \"none\", \"reduceOptions\": { \"calcs\": [\"lastNotNull\"\
+    ] } },\n      \"targets\": [{ \"expr\": \"count(kube_persistentvolumeclaim_info)\", \"legendFormat\": \"\" }],\n      \"title\": \"PVCs\",\n      \"type\": \"stat\"\n    },\n    {\n      \"datasource\"\
+    : { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": { \"defaults\": { \"thresholds\": { \"steps\": [{\"color\": \"green\", \"value\": null}] } } },\n      \"gridPos\"\
+    : { \"h\": 4, \"w\": 4, \"x\": 20, \"y\": 1 },\n      \"options\": { \"colorMode\": \"value\", \"graphMode\": \"none\", \"reduceOptions\": { \"calcs\": [\"lastNotNull\"] } },\n      \"targets\": [{\
+    \ \"expr\": \"cluster:capacity_cpu_cores:sum\", \"legendFormat\": \"\" }],\n      \"title\": \"CPU Cores\",\n      \"type\": \"stat\"\n    },\n    {\n      \"collapsed\": false,\n      \"gridPos\":\
+    \ { \"h\": 1, \"w\": 24, \"x\": 0, \"y\": 5 },\n      \"title\": \"Node Resources\",\n      \"type\": \"row\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\"\
+    \ },\n      \"fieldConfig\": { \"defaults\": { \"color\": { \"mode\": \"thresholds\" }, \"thresholds\": { \"steps\": [{\"color\": \"green\", \"value\": null}, {\"color\": \"yellow\", \"value\": 70},\
+    \ {\"color\": \"red\", \"value\": 85}] }, \"unit\": \"percent\", \"min\": 0, \"max\": 100 } },\n      \"gridPos\": { \"h\": 6, \"w\": 8, \"x\": 0, \"y\": 6 },\n      \"options\": { \"reduceOptions\"\
+    : { \"calcs\": [\"lastNotNull\"] }, \"showThresholdMarkers\": true },\n      \"targets\": [{ \"expr\": \"(1 - avg(rate(node_cpu_seconds_total{mode=\\\"idle\\\"}[5m]))) * 100\", \"legendFormat\": \"\
+    CPU\" }],\n      \"title\": \"Node CPU Usage (%)\",\n      \"type\": \"gauge\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\"\
+    : { \"defaults\": { \"color\": { \"mode\": \"thresholds\" }, \"thresholds\": { \"steps\": [{\"color\": \"green\", \"value\": null}, {\"color\": \"yellow\", \"value\": 70}, {\"color\": \"red\", \"value\"\
+    : 85}] }, \"unit\": \"percent\", \"min\": 0, \"max\": 100 } },\n      \"gridPos\": { \"h\": 6, \"w\": 8, \"x\": 8, \"y\": 6 },\n      \"options\": { \"reduceOptions\": { \"calcs\": [\"lastNotNull\"\
+    ] }, \"showThresholdMarkers\": true },\n      \"targets\": [{ \"expr\": \"(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100\", \"legendFormat\": \"Memory\" }],\n      \"title\"\
+    : \"Node Memory Usage (%)\",\n      \"type\": \"gauge\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": { \"defaults\": { \"color\"\
+    : { \"mode\": \"thresholds\" }, \"thresholds\": { \"steps\": [{\"color\": \"green\", \"value\": null}, {\"color\": \"yellow\", \"value\": 70}, {\"color\": \"red\", \"value\": 85}] }, \"unit\": \"percent\"\
+    , \"min\": 0, \"max\": 100 } },\n      \"gridPos\": { \"h\": 6, \"w\": 8, \"x\": 16, \"y\": 6 },\n      \"options\": { \"reduceOptions\": { \"calcs\": [\"lastNotNull\"] }, \"showThresholdMarkers\":\
+    \ true },\n      \"targets\": [{ \"expr\": \"(1 - (node_filesystem_avail_bytes{mountpoint=\\\"/\\\",fstype!=\\\"rootfs\\\"} / node_filesystem_size_bytes{mountpoint=\\\"/\\\",fstype!=\\\"rootfs\\\"}))\
+    \ * 100\", \"legendFormat\": \"Root FS\" }],\n      \"title\": \"Node Disk Usage (%)\",\n      \"type\": \"gauge\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\"\
+    \ },\n      \"fieldConfig\": { \"defaults\": { \"color\": { \"mode\": \"palette-classic\" }, \"custom\": { \"fillOpacity\": 20, \"lineWidth\": 2, \"spanNulls\": true }, \"unit\": \"percent\" } },\n\
+    \      \"gridPos\": { \"h\": 7, \"w\": 12, \"x\": 0, \"y\": 12 },\n      \"options\": { \"legend\": { \"displayMode\": \"list\", \"placement\": \"bottom\" }, \"tooltip\": { \"mode\": \"multi\" } },\n\
+    \      \"targets\": [\n        { \"expr\": \"(1 - avg(rate(node_cpu_seconds_total{mode=\\\"idle\\\"}[5m]))) * 100\", \"legendFormat\": \"CPU Usage\" }\n      ],\n      \"title\": \"CPU Usage Over Time\"\
+    ,\n      \"type\": \"timeseries\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": { \"defaults\": { \"color\": { \"mode\": \"\
+    palette-classic\" }, \"custom\": { \"fillOpacity\": 20, \"lineWidth\": 2, \"spanNulls\": true }, \"unit\": \"bytes\" } },\n      \"gridPos\": { \"h\": 7, \"w\": 12, \"x\": 12, \"y\": 12 },\n      \"\
+    options\": { \"legend\": { \"displayMode\": \"list\", \"placement\": \"bottom\" }, \"tooltip\": { \"mode\": \"multi\" } },\n      \"targets\": [\n        { \"expr\": \"node_memory_MemTotal_bytes\",\
+    \ \"legendFormat\": \"Total\" },\n        { \"expr\": \"node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes\", \"legendFormat\": \"Used\" },\n        { \"expr\": \"node_memory_Cached_bytes\"\
+    , \"legendFormat\": \"Cached\" }\n      ],\n      \"title\": \"Memory Usage Over Time\",\n      \"type\": \"timeseries\"\n    },\n    {\n      \"collapsed\": false,\n      \"gridPos\": { \"h\": 1, \"\
+    w\": 24, \"x\": 0, \"y\": 19 },\n      \"title\": \"Network & Disk I/O\",\n      \"type\": \"row\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n \
+    \     \"fieldConfig\": { \"defaults\": { \"color\": { \"mode\": \"palette-classic\" }, \"custom\": { \"fillOpacity\": 15, \"lineWidth\": 2, \"spanNulls\": true }, \"unit\": \"Bps\" } },\n      \"gridPos\"\
+    : { \"h\": 7, \"w\": 12, \"x\": 0, \"y\": 20 },\n      \"options\": { \"legend\": { \"displayMode\": \"list\", \"placement\": \"bottom\" }, \"tooltip\": { \"mode\": \"multi\" } },\n      \"targets\"\
+    : [\n        { \"expr\": \"sum(rate(node_network_receive_bytes_total{device!~\\\"lo|veth.*|ovs.*|br.*|ovn.*|genev.*|tun.*\\\"}[5m]))\", \"legendFormat\": \"Receive\" },\n        { \"expr\": \"-sum(rate(node_network_transmit_bytes_total{device!~\\\
+    \"lo|veth.*|ovs.*|br.*|ovn.*|genev.*|tun.*\\\"}[5m]))\", \"legendFormat\": \"Transmit\" }\n      ],\n      \"title\": \"Network Throughput (Physical)\",\n      \"type\": \"timeseries\"\n    },\n   \
+    \ {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": { \"defaults\": { \"color\": { \"mode\": \"palette-classic\" }, \"custom\": { \"fillOpacity\"\
+    : 15, \"lineWidth\": 2, \"spanNulls\": true }, \"unit\": \"Bps\" } },\n      \"gridPos\": { \"h\": 7, \"w\": 12, \"x\": 12, \"y\": 20 },\n      \"options\": { \"legend\": { \"displayMode\": \"list\"\
+    , \"placement\": \"bottom\" }, \"tooltip\": { \"mode\": \"multi\" } },\n      \"targets\": [\n        { \"expr\": \"sum(rate(node_disk_read_bytes_total[5m]))\", \"legendFormat\": \"Read\" },\n     \
+    \   { \"expr\": \"-sum(rate(node_disk_written_bytes_total[5m]))\", \"legendFormat\": \"Write\" }\n      ],\n      \"title\": \"Disk I/O Throughput\",\n      \"type\": \"timeseries\"\n    },\n    {\n\
+    \      \"collapsed\": false,\n      \"gridPos\": { \"h\": 1, \"w\": 24, \"x\": 0, \"y\": 27 },\n      \"title\": \"Top Namespaces by Resource\",\n      \"type\": \"row\"\n    },\n    {\n      \"datasource\"\
+    : { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": { \"defaults\": { \"color\": { \"mode\": \"palette-classic\" }, \"custom\": { \"fillOpacity\": 30 }, \"unit\": \"\
+    short\" } },\n      \"gridPos\": { \"h\": 8, \"w\": 12, \"x\": 0, \"y\": 28 },\n      \"options\": { \"legend\": { \"displayMode\": \"table\", \"placement\": \"right\", \"sortBy\": \"Last\", \"sortDesc\"\
+    : true }, \"tooltip\": { \"mode\": \"multi\" } },\n      \"targets\": [{ \"expr\": \"topk(10, sum by (namespace) (rate(container_cpu_usage_seconds_total{container!=\\\"\\\",container!=\\\"POD\\\"}[5m])))\"\
+    , \"legendFormat\": \"{{ namespace }}\" }],\n      \"title\": \"Top 10 Namespaces by CPU\",\n      \"type\": \"timeseries\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\"\
+    : \"${datasource}\" },\n      \"fieldConfig\": { \"defaults\": { \"color\": { \"mode\": \"palette-classic\" }, \"custom\": { \"fillOpacity\": 30 }, \"unit\": \"bytes\" } },\n      \"gridPos\": { \"\
+    h\": 8, \"w\": 12, \"x\": 12, \"y\": 28 },\n      \"options\": { \"legend\": { \"displayMode\": \"table\", \"placement\": \"right\", \"sortBy\": \"Last\", \"sortDesc\": true }, \"tooltip\": { \"mode\"\
+    : \"multi\" } },\n      \"targets\": [{ \"expr\": \"topk(10, sum by (namespace) (container_memory_working_set_bytes{container!=\\\"\\\",container!=\\\"POD\\\"}))\", \"legendFormat\": \"{{ namespace\
+    \ }}\" }],\n      \"title\": \"Top 10 Namespaces by Memory\",\n      \"type\": \"timeseries\"\n    },\n    {\n      \"collapsed\": false,\n      \"gridPos\": { \"h\": 1, \"w\": 24, \"x\": 0, \"y\":\
+    \ 36 },\n      \"title\": \"API Server & etcd\",\n      \"type\": \"row\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": { \"\
+    defaults\": { \"color\": { \"mode\": \"palette-classic\" }, \"custom\": { \"fillOpacity\": 10, \"lineWidth\": 2, \"spanNulls\": true }, \"unit\": \"reqps\" } },\n      \"gridPos\": { \"h\": 7, \"w\"\
+    : 12, \"x\": 0, \"y\": 37 },\n      \"options\": { \"legend\": { \"displayMode\": \"list\", \"placement\": \"bottom\" }, \"tooltip\": { \"mode\": \"multi\" } },\n      \"targets\": [\n        { \"expr\"\
+    : \"sum(rate(apiserver_request_total[5m])) by (code)\", \"legendFormat\": \"{{ code }}\" }\n      ],\n      \"title\": \"API Server Request Rate by Code\",\n      \"type\": \"timeseries\"\n    },\n\
+    \    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": { \"defaults\": { \"color\": { \"mode\": \"palette-classic\" }, \"custom\": { \"fillOpacity\"\
+    : 10, \"lineWidth\": 2, \"spanNulls\": true }, \"unit\": \"s\" } },\n      \"gridPos\": { \"h\": 7, \"w\": 12, \"x\": 12, \"y\": 37 },\n      \"options\": { \"legend\": { \"displayMode\": \"list\",\
+    \ \"placement\": \"bottom\" }, \"tooltip\": { \"mode\": \"multi\" } },\n      \"targets\": [\n        { \"expr\": \"histogram_quantile(0.99, sum(rate(etcd_disk_wal_fsync_duration_seconds_bucket[5m]))\
+    \ by (le))\", \"legendFormat\": \"WAL fsync p99\" },\n        { \"expr\": \"histogram_quantile(0.99, sum(rate(etcd_disk_backend_commit_duration_seconds_bucket[5m])) by (le))\", \"legendFormat\": \"\
+    Backend commit p99\" }\n      ],\n      \"title\": \"etcd Disk Latency (p99)\",\n      \"type\": \"timeseries\"\n    }\n  ],\n  \"refresh\": \"1m\",\n  \"schemaVersion\": 39,\n  \"tags\": [\"ocp\",\
+    \ \"openshift\", \"cluster\"],\n  \"templating\": {\n    \"list\": [{\n      \"current\": { \"selected\": false, \"text\": \"Prometheus-OCP\", \"value\": \"Prometheus-OCP\" },\n      \"hide\": 0, \"\
+    includeAll\": false, \"label\": \"Data Source\", \"name\": \"datasource\",\n      \"query\": \"prometheus\", \"type\": \"datasource\"\n    }]\n  },\n  \"time\": { \"from\": \"now-6h\", \"to\": \"now\"\
+    \ },\n  \"title\": \"OCP Cluster Overview\",\n  \"uid\": \"ocp-cluster-overview\"\n}\n"
+

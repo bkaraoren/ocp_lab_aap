@@ -1,0 +1,94 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: ocp-virtualization
+  namespace: grafana
+spec:
+  allowCrossNamespaceImport: false
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+  json: "{\n  \"annotations\": { \"list\": [] },\n  \"editable\": true,\n  \"graphTooltip\": 1,\n  \"panels\": [\n    {\n      \"collapsed\": false,\n      \"gridPos\": { \"h\": 1, \"w\": 24, \"x\": 0,\
+    \ \"y\": 0 },\n      \"title\": \"Virtualization Overview\",\n      \"type\": \"row\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\"\
+    : { \"defaults\": { \"thresholds\": { \"steps\": [{\"color\": \"green\", \"value\": null}] } } },\n      \"gridPos\": { \"h\": 4, \"w\": 4, \"x\": 0, \"y\": 1 },\n      \"options\": { \"colorMode\"\
+    : \"value\", \"graphMode\": \"none\", \"reduceOptions\": { \"calcs\": [\"lastNotNull\"] } },\n      \"targets\": [{ \"expr\": \"kubevirt_number_of_vms\", \"legendFormat\": \"\" }],\n      \"title\"\
+    : \"Total VMs\",\n      \"type\": \"stat\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": { \"defaults\": { \"thresholds\": {\
+    \ \"steps\": [{\"color\": \"green\", \"value\": null}] } } },\n      \"gridPos\": { \"h\": 4, \"w\": 4, \"x\": 4, \"y\": 1 },\n      \"options\": { \"colorMode\": \"value\", \"graphMode\": \"none\"\
+    , \"reduceOptions\": { \"calcs\": [\"lastNotNull\"] } },\n      \"targets\": [{ \"expr\": \"cnv:vmi_status_running:count\", \"legendFormat\": \"\" }],\n      \"title\": \"Running VMIs\",\n      \"type\"\
+    : \"stat\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": { \"defaults\": { \"thresholds\": { \"steps\": [{\"color\": \"green\"\
+    , \"value\": null}] } } },\n      \"gridPos\": { \"h\": 4, \"w\": 4, \"x\": 8, \"y\": 1 },\n      \"options\": { \"colorMode\": \"value\", \"graphMode\": \"none\", \"reduceOptions\": { \"calcs\": [\"\
+    lastNotNull\"] } },\n      \"targets\": [{ \"expr\": \"kubevirt_allocatable_nodes\", \"legendFormat\": \"\" }],\n      \"title\": \"KVM Nodes\",\n      \"type\": \"stat\"\n    },\n    {\n      \"datasource\"\
+    : { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": { \"defaults\": { \"thresholds\": { \"steps\": [{\"color\": \"green\", \"value\": null}] } } },\n      \"gridPos\"\
+    : { \"h\": 4, \"w\": 4, \"x\": 12, \"y\": 1 },\n      \"options\": { \"colorMode\": \"value\", \"graphMode\": \"none\", \"reduceOptions\": { \"calcs\": [\"lastNotNull\"] } },\n      \"targets\": [{\
+    \ \"expr\": \"cluster:vmi_request_cpu_cores:sum\", \"legendFormat\": \"\" }],\n      \"title\": \"vCPU Cores Requested\",\n      \"type\": \"stat\"\n    },\n    {\n      \"datasource\": { \"type\":\
+    \ \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": { \"defaults\": { \"thresholds\": { \"steps\": [{\"color\": \"green\", \"value\": null}, {\"color\": \"yellow\", \"value\": 1}]\
+    \ } } },\n      \"gridPos\": { \"h\": 4, \"w\": 4, \"x\": 16, \"y\": 1 },\n      \"options\": { \"colorMode\": \"value\", \"graphMode\": \"none\", \"reduceOptions\": { \"calcs\": [\"lastNotNull\"] }\
+    \ },\n      \"targets\": [{ \"expr\": \"kubevirt_vmi_number_of_outdated\", \"legendFormat\": \"\" }],\n      \"title\": \"Outdated VMIs\",\n      \"type\": \"stat\"\n    },\n    {\n      \"datasource\"\
+    : { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": { \"defaults\": { \"color\": { \"mode\": \"thresholds\" }, \"thresholds\": { \"steps\": [{\"color\": \"green\", \"\
+    value\": null}, {\"color\": \"yellow\", \"value\": 1}, {\"color\": \"red\", \"value\": 2}] } } },\n      \"gridPos\": { \"h\": 4, \"w\": 4, \"x\": 20, \"y\": 1 },\n      \"options\": { \"colorMode\"\
+    : \"value\", \"graphMode\": \"none\", \"reduceOptions\": { \"calcs\": [\"lastNotNull\"] } },\n      \"targets\": [{ \"expr\": \"kubevirt_hco_system_health_status\", \"legendFormat\": \"\" }],\n    \
+    \  \"title\": \"HCO Health\",\n      \"type\": \"stat\"\n    },\n    {\n      \"collapsed\": false,\n      \"gridPos\": { \"h\": 1, \"w\": 24, \"x\": 0, \"y\": 5 },\n      \"title\": \"VM CPU\",\n \
+    \     \"type\": \"row\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": { \"defaults\": { \"color\": { \"mode\": \"palette-classic\"\
+    \ }, \"custom\": { \"fillOpacity\": 20, \"lineWidth\": 2, \"spanNulls\": true }, \"unit\": \"percent\" } },\n      \"gridPos\": { \"h\": 7, \"w\": 12, \"x\": 0, \"y\": 6 },\n      \"options\": { \"\
+    legend\": { \"displayMode\": \"list\", \"placement\": \"bottom\" }, \"tooltip\": { \"mode\": \"multi\" } },\n      \"targets\": [{ \"expr\": \"rate(kubevirt_vmi_cpu_usage_seconds_total[5m]) * 100\"\
+    , \"legendFormat\": \"{{ name }} ({{ namespace }})\" }],\n      \"title\": \"VM CPU Usage (%)\",\n      \"type\": \"timeseries\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"\
+    uid\": \"${datasource}\" },\n      \"fieldConfig\": { \"defaults\": { \"color\": { \"mode\": \"palette-classic\" }, \"custom\": { \"fillOpacity\": 20, \"lineWidth\": 2, \"spanNulls\": true } } },\n\
+    \      \"gridPos\": { \"h\": 7, \"w\": 12, \"x\": 12, \"y\": 6 },\n      \"options\": { \"legend\": { \"displayMode\": \"list\", \"placement\": \"bottom\" }, \"tooltip\": { \"mode\": \"multi\" } },\n\
+    \      \"targets\": [\n        { \"expr\": \"kubevirt_vmi_guest_load_1m\", \"legendFormat\": \"1m - {{ name }}\" },\n        { \"expr\": \"kubevirt_vmi_guest_load_5m\", \"legendFormat\": \"5m - {{ name\
+    \ }}\" },\n        { \"expr\": \"kubevirt_vmi_guest_load_15m\", \"legendFormat\": \"15m - {{ name }}\" }\n      ],\n      \"title\": \"VM Guest Load Average\",\n      \"type\": \"timeseries\"\n    },\n\
+    \    {\n      \"collapsed\": false,\n      \"gridPos\": { \"h\": 1, \"w\": 24, \"x\": 0, \"y\": 13 },\n      \"title\": \"VM Memory\",\n      \"type\": \"row\"\n    },\n    {\n      \"datasource\":\
+    \ { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": { \"defaults\": { \"color\": { \"mode\": \"thresholds\" }, \"thresholds\": { \"steps\": [{\"color\": \"green\", \"\
+    value\": null}, {\"color\": \"yellow\", \"value\": 70}, {\"color\": \"red\", \"value\": 90}] }, \"unit\": \"percent\", \"min\": 0, \"max\": 100 } },\n      \"gridPos\": { \"h\": 6, \"w\": 8, \"x\":\
+    \ 0, \"y\": 14 },\n      \"options\": { \"reduceOptions\": { \"calcs\": [\"lastNotNull\"] }, \"showThresholdMarkers\": true },\n      \"targets\": [{ \"expr\": \"(kubevirt_vmi_memory_used_bytes / kubevirt_vmi_memory_domain_bytes)\
+    \ * 100\", \"legendFormat\": \"{{ name }}\" }],\n      \"title\": \"VM Memory Usage (%)\",\n      \"type\": \"gauge\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\"\
+    \ },\n      \"fieldConfig\": { \"defaults\": { \"color\": { \"mode\": \"palette-classic\" }, \"custom\": { \"fillOpacity\": 20, \"lineWidth\": 2, \"spanNulls\": true }, \"unit\": \"bytes\" } },\n  \
+    \    \"gridPos\": { \"h\": 6, \"w\": 16, \"x\": 8, \"y\": 14 },\n      \"options\": { \"legend\": { \"displayMode\": \"list\", \"placement\": \"bottom\" }, \"tooltip\": { \"mode\": \"multi\" } },\n\
+    \      \"targets\": [\n        { \"expr\": \"kubevirt_vmi_memory_domain_bytes\", \"legendFormat\": \"Total - {{ name }}\" },\n        { \"expr\": \"kubevirt_vmi_memory_used_bytes\", \"legendFormat\"\
+    : \"Used - {{ name }}\" },\n        { \"expr\": \"kubevirt_vmi_memory_available_bytes\", \"legendFormat\": \"Available - {{ name }}\" },\n        { \"expr\": \"kubevirt_vmi_memory_cached_bytes\", \"\
+    legendFormat\": \"Cached - {{ name }}\" }\n      ],\n      \"title\": \"VM Memory Over Time\",\n      \"type\": \"timeseries\"\n    },\n    {\n      \"collapsed\": false,\n      \"gridPos\": { \"h\"\
+    : 1, \"w\": 24, \"x\": 0, \"y\": 20 },\n      \"title\": \"VM Network\",\n      \"type\": \"row\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n  \
+    \    \"fieldConfig\": { \"defaults\": { \"color\": { \"mode\": \"palette-classic\" }, \"custom\": { \"fillOpacity\": 15, \"lineWidth\": 2, \"spanNulls\": true }, \"unit\": \"Bps\" } },\n      \"gridPos\"\
+    : { \"h\": 7, \"w\": 12, \"x\": 0, \"y\": 21 },\n      \"options\": { \"legend\": { \"displayMode\": \"list\", \"placement\": \"bottom\" }, \"tooltip\": { \"mode\": \"multi\" } },\n      \"targets\"\
+    : [\n        { \"expr\": \"rate(kubevirt_vmi_network_receive_bytes_total[5m])\", \"legendFormat\": \"RX - {{ name }} ({{ interface }})\" },\n        { \"expr\": \"-rate(kubevirt_vmi_network_transmit_bytes_total[5m])\"\
+    , \"legendFormat\": \"TX - {{ name }} ({{ interface }})\" }\n      ],\n      \"title\": \"VM Network Throughput\",\n      \"type\": \"timeseries\"\n    },\n    {\n      \"datasource\": { \"type\": \"\
+    prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": { \"defaults\": { \"color\": { \"mode\": \"palette-classic\" }, \"custom\": { \"fillOpacity\": 15, \"lineWidth\": 2, \"spanNulls\"\
+    : true }, \"unit\": \"pps\" } },\n      \"gridPos\": { \"h\": 7, \"w\": 12, \"x\": 12, \"y\": 21 },\n      \"options\": { \"legend\": { \"displayMode\": \"list\", \"placement\": \"bottom\" }, \"tooltip\"\
+    : { \"mode\": \"multi\" } },\n      \"targets\": [\n        { \"expr\": \"rate(kubevirt_vmi_network_receive_packets_total[5m])\", \"legendFormat\": \"RX pkts - {{ name }}\" },\n        { \"expr\": \"\
+    rate(kubevirt_vmi_network_transmit_packets_total[5m])\", \"legendFormat\": \"TX pkts - {{ name }}\" },\n        { \"expr\": \"rate(kubevirt_vmi_network_receive_errors_total[5m])\", \"legendFormat\"\
+    : \"RX errors - {{ name }}\" },\n        { \"expr\": \"rate(kubevirt_vmi_network_transmit_errors_total[5m])\", \"legendFormat\": \"TX errors - {{ name }}\" }\n      ],\n      \"title\": \"VM Network\
+    \ Packets & Errors\",\n      \"type\": \"timeseries\"\n    },\n    {\n      \"collapsed\": false,\n      \"gridPos\": { \"h\": 1, \"w\": 24, \"x\": 0, \"y\": 28 },\n      \"title\": \"VM Disk & Filesystem\"\
+    ,\n      \"type\": \"row\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": { \"defaults\": { \"color\": { \"mode\": \"thresholds\"\
+    \ }, \"thresholds\": { \"steps\": [{\"color\": \"green\", \"value\": null}, {\"color\": \"yellow\", \"value\": 70}, {\"color\": \"red\", \"value\": 90}] }, \"unit\": \"percent\", \"min\": 0, \"max\"\
+    : 100 } },\n      \"gridPos\": { \"h\": 6, \"w\": 8, \"x\": 0, \"y\": 29 },\n      \"options\": { \"reduceOptions\": { \"calcs\": [\"lastNotNull\"] }, \"showThresholdMarkers\": true },\n      \"targets\"\
+    : [{ \"expr\": \"(kubevirt_vmi_filesystem_used_bytes / kubevirt_vmi_filesystem_capacity_bytes) * 100\", \"legendFormat\": \"{{ name }}\" }],\n      \"title\": \"VM Filesystem Usage (%)\",\n      \"\
+    type\": \"gauge\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": { \"defaults\": { \"color\": { \"mode\": \"palette-classic\"\
+    \ }, \"custom\": { \"fillOpacity\": 15, \"lineWidth\": 2, \"spanNulls\": true }, \"unit\": \"Bps\" } },\n      \"gridPos\": { \"h\": 6, \"w\": 16, \"x\": 8, \"y\": 29 },\n      \"options\": { \"legend\"\
+    : { \"displayMode\": \"list\", \"placement\": \"bottom\" }, \"tooltip\": { \"mode\": \"multi\" } },\n      \"targets\": [\n        { \"expr\": \"kubevirt_vmi_memory_swap_in_traffic_bytes\", \"legendFormat\"\
+    : \"Swap In - {{ name }}\" },\n        { \"expr\": \"kubevirt_vmi_memory_swap_out_traffic_bytes\", \"legendFormat\": \"Swap Out - {{ name }}\" }\n      ],\n      \"title\": \"VM Swap Activity\",\n \
+    \     \"type\": \"timeseries\"\n    },\n    {\n      \"collapsed\": false,\n      \"gridPos\": { \"h\": 1, \"w\": 24, \"x\": 0, \"y\": 35 },\n      \"title\": \"CNV Operator Health\",\n      \"type\"\
+    : \"row\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": { \"defaults\": { \"thresholds\": { \"steps\": [{\"color\": \"green\"\
+    , \"value\": null}, {\"color\": \"red\", \"value\": 0.5}] }, \"mappings\": [{\"options\": {\"0\": {\"text\": \"Down\"}, \"1\": {\"text\": \"Up\"}}, \"type\": \"value\"}] } },\n      \"gridPos\": { \"\
+    h\": 4, \"w\": 4, \"x\": 0, \"y\": 36 },\n      \"options\": { \"colorMode\": \"background\", \"graphMode\": \"none\", \"reduceOptions\": { \"calcs\": [\"lastNotNull\"] } },\n      \"targets\": [{ \"\
+    expr\": \"kubevirt_virt_api_up\", \"legendFormat\": \"\" }],\n      \"title\": \"virt-api\",\n      \"type\": \"stat\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\"\
+    \ },\n      \"fieldConfig\": { \"defaults\": { \"thresholds\": { \"steps\": [{\"color\": \"green\", \"value\": null}, {\"color\": \"red\", \"value\": 0.5}] }, \"mappings\": [{\"options\": {\"0\": {\"\
+    text\": \"Down\"}, \"1\": {\"text\": \"Up\"}}, \"type\": \"value\"}] } },\n      \"gridPos\": { \"h\": 4, \"w\": 4, \"x\": 4, \"y\": 36 },\n      \"options\": { \"colorMode\": \"background\", \"graphMode\"\
+    : \"none\", \"reduceOptions\": { \"calcs\": [\"lastNotNull\"] } },\n      \"targets\": [{ \"expr\": \"kubevirt_virt_controller_up\", \"legendFormat\": \"\" }],\n      \"title\": \"virt-controller\"\
+    ,\n      \"type\": \"stat\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": { \"defaults\": { \"thresholds\": { \"steps\": [{\"\
+    color\": \"green\", \"value\": null}, {\"color\": \"red\", \"value\": 0.5}] }, \"mappings\": [{\"options\": {\"0\": {\"text\": \"Down\"}, \"1\": {\"text\": \"Up\"}}, \"type\": \"value\"}] } },\n   \
+    \   \"gridPos\": { \"h\": 4, \"w\": 4, \"x\": 8, \"y\": 36 },\n      \"options\": { \"colorMode\": \"background\", \"graphMode\": \"none\", \"reduceOptions\": { \"calcs\": [\"lastNotNull\"] } },\n \
+    \     \"targets\": [{ \"expr\": \"kubevirt_virt_handler_up\", \"legendFormat\": \"\" }],\n      \"title\": \"virt-handler\",\n      \"type\": \"stat\"\n    },\n    {\n      \"datasource\": { \"type\"\
+    : \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": { \"defaults\": { \"thresholds\": { \"steps\": [{\"color\": \"green\", \"value\": null}, {\"color\": \"red\", \"value\": 0.5}]\
+    \ }, \"mappings\": [{\"options\": {\"0\": {\"text\": \"Down\"}, \"1\": {\"text\": \"Up\"}}, \"type\": \"value\"}] } },\n      \"gridPos\": { \"h\": 4, \"w\": 4, \"x\": 12, \"y\": 36 },\n      \"options\"\
+    : { \"colorMode\": \"background\", \"graphMode\": \"none\", \"reduceOptions\": { \"calcs\": [\"lastNotNull\"] } },\n      \"targets\": [{ \"expr\": \"kubevirt_virt_operator_leading\", \"legendFormat\"\
+    : \"\" }],\n      \"title\": \"virt-operator\",\n      \"type\": \"stat\"\n    },\n    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": { \"\
+    defaults\": { \"thresholds\": { \"steps\": [{\"color\": \"green\", \"value\": null}, {\"color\": \"red\", \"value\": 0.5}] }, \"mappings\": [{\"options\": {\"0\": {\"text\": \"Down\"}, \"1\": {\"text\"\
+    : \"Up\"}}, \"type\": \"value\"}] } },\n      \"gridPos\": { \"h\": 4, \"w\": 4, \"x\": 16, \"y\": 36 },\n      \"options\": { \"colorMode\": \"background\", \"graphMode\": \"none\", \"reduceOptions\"\
+    : { \"calcs\": [\"lastNotNull\"] } },\n      \"targets\": [{ \"expr\": \"kubevirt_ssp_operator_up\", \"legendFormat\": \"\" }],\n      \"title\": \"SSP Operator\",\n      \"type\": \"stat\"\n    },\n\
+    \    {\n      \"datasource\": { \"type\": \"prometheus\", \"uid\": \"${datasource}\" },\n      \"fieldConfig\": { \"defaults\": { \"thresholds\": { \"steps\": [{\"color\": \"green\", \"value\": null},\
+    \ {\"color\": \"red\", \"value\": 0.5}] }, \"mappings\": [{\"options\": {\"0\": {\"text\": \"Down\"}, \"1\": {\"text\": \"Up\"}}, \"type\": \"value\"}] } },\n      \"gridPos\": { \"h\": 4, \"w\": 4,\
+    \ \"x\": 20, \"y\": 36 },\n      \"options\": { \"colorMode\": \"background\", \"graphMode\": \"none\", \"reduceOptions\": { \"calcs\": [\"lastNotNull\"] } },\n      \"targets\": [{ \"expr\": \"kubevirt_cdi_operator_up\"\
+    , \"legendFormat\": \"\" }],\n      \"title\": \"CDI Operator\",\n      \"type\": \"stat\"\n    }\n  ],\n  \"refresh\": \"1m\",\n  \"schemaVersion\": 39,\n  \"tags\": [\"ocp\", \"virtualization\", \"\
+    kubevirt\", \"cnv\"],\n  \"templating\": {\n    \"list\": [{\n      \"current\": { \"selected\": false, \"text\": \"Prometheus-OCP\", \"value\": \"Prometheus-OCP\" },\n      \"hide\": 0, \"includeAll\"\
+    : false, \"label\": \"Data Source\", \"name\": \"datasource\",\n      \"query\": \"prometheus\", \"type\": \"datasource\"\n    }]\n  },\n  \"time\": { \"from\": \"now-6h\", \"to\": \"now\" },\n  \"\
+    title\": \"OCP Virtualization (CNV)\",\n  \"uid\": \"ocp-virtualization\"\n}\n"
+

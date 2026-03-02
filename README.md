@@ -2537,15 +2537,32 @@ The AAP controller exposes ~60 Prometheus metrics at `/api/controller/v2/metrics
 | `task_manager_*` | Task manager internals (timing, counts) |
 | `callback_receiver_*` | Event processing pipeline metrics |
 
-### 21.5 Dashboard Panels
+### 21.5 Dashboards
 
-The **Ansible Automation Platform - Overview** dashboard includes:
+Three dashboards are deployed:
 
+**1. Ansible Automation Platform - Overview** (`aap-overview`)
 - **System Overview:** Organizations, Users, Inventories, Projects, Job Templates, Schedules
 - **Job Status:** Successful, Failed, Running, Pending counts + status over time graph
 - **Instance Capacity:** Capacity usage gauge (%), capacity over time, jobs by launch type
 - **Hosts & License:** License usage gauge (%), total/active hosts, licensed/free counts, DB connections
 - **Task Manager Internals:** Task manager timing, callback receiver queue/processing metrics
+
+**2. OCP Cluster Overview** (`ocp-cluster-overview`)
+- **Cluster Overview:** Nodes, Namespaces, Total Pods, Failed Pods, PVCs, CPU Cores
+- **Node Resources:** CPU/Memory/Disk usage gauges (%) with threshold coloring
+- **Resource Over Time:** CPU usage and Memory usage time series
+- **Network & Disk I/O:** Physical network throughput (RX/TX), disk I/O throughput (R/W)
+- **Top Namespaces:** Top 10 namespaces by CPU and memory consumption
+- **API Server & etcd:** API request rate by HTTP code, etcd disk latency (p99)
+
+**3. OCP Virtualization (CNV)** (`ocp-virtualization`)
+- **Virtualization Overview:** Total VMs, Running VMIs, KVM Nodes, vCPU Requested, Outdated VMIs, HCO Health
+- **VM CPU:** Per-VM CPU usage (%) over time, guest load averages (1m/5m/15m)
+- **VM Memory:** Per-VM memory usage gauge (%), memory breakdown over time (total/used/available/cached)
+- **VM Network:** Per-VM network throughput (RX/TX bytes), packet rates and errors
+- **VM Disk & Filesystem:** Per-VM filesystem usage gauge (%), swap activity
+- **CNV Operator Health:** Status indicators for virt-api, virt-controller, virt-handler, virt-operator, SSP, CDI
 
 ### 21.6 ServiceMonitor Details
 
@@ -2563,6 +2580,8 @@ The `aap` namespace has the `openshift.io/cluster-monitoring=true` label, so the
 | `gitops/apps/grafana/aap-metrics.yaml` | AAP metrics Service and ServiceMonitor |
 | `gitops/apps/grafana/datasource.yaml` | GrafanaDatasource CR (Thanos querier) |
 | `gitops/apps/grafana/aap-dashboard.yaml` | GrafanaDashboard CR (AAP Overview) |
+| `gitops/apps/grafana/ocp-cluster-dashboard.yaml` | GrafanaDashboard CR (OCP Cluster Overview) |
+| `gitops/apps/grafana/ocp-virtualization-dashboard.yaml` | GrafanaDashboard CR (OCP Virtualization) |
 
 ### 21.8 Post-Deployment Steps
 
