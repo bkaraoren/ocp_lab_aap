@@ -2511,7 +2511,7 @@ AAP Controller (gateway) → /api/controller/v2/metrics/ (Prometheus format)
 |---------|-------|
 | **URL** | `https://grafana-route-grafana.apps.ocp.karaoren.eu` |
 | **Username** | `admin` |
-| **Password** | `<GRAFANA_PASSWORD_IN_VAULT>` |
+| **Password** | Stored in Vault at `secret/ocp/grafana` (key: `admin_password`) |
 
 ### 21.4 AAP Metrics Available
 

@@ -8,6 +8,8 @@ metadata:
   labels:
     dashboards: grafana
 spec:
+  # Admin credentials are stored in Vault at secret/ocp/grafana
+  # Set GF_SECURITY_ADMIN_PASSWORD via the deployment env or Grafana UI after first login
   config:
     auth:
       disable_login_form: "false"
@@ -15,7 +17,6 @@ spec:
       enabled: "false"
     security:
       admin_user: admin
-      admin_password: <GRAFANA_PASSWORD_IN_VAULT>
     server:
       root_url: https://grafana-grafana.apps.ocp.karaoren.eu
   route:
