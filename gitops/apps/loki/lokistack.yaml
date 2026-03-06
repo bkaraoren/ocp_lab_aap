@@ -1,0 +1,36 @@
+# LokiStack instance - S3 secret must be created separately
+# See gitops/apps/loki/README or Section 22 in README.md
+apiVersion: v1
+kind: Secret
+metadata:
+  name: logging-loki-s3
+  namespace: openshift-logging
+type: Opaque
+stringData:
+  access_key_id: <MINIO_ACCESS_KEY>
+  access_key_secret: <MINIO_SECRET_KEY>
+  bucketnames: loki
+  endpoint: http://minio.minio.svc:9000
+  region: us-east-1
+---
+apiVersion: loki.grafana.com/v1
+kind: LokiStack
+metadata:
+  name: logging-loki
+  namespace: openshift-logging
+spec:
+  size: 1x.demo
+  storage:
+    schemas:
+      - version: v13
+        effectiveDate: "2024-10-25"
+    secret:
+      name: logging-loki-s3
+      type: s3
+  storageClassName: nfs-csi
+  tenants:
+    mode: openshift-logging
+  limits:
+    global:
+      retention:
+        days: 7

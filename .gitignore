@@ -1,5 +1,10 @@
 info.txt
 INCIDENT-*.md
 
+# Use case documents and generated files
+USECASE-*.md
+USECASE-*.docx
+*.docx
+
 # Ansible secrets (ansible-vault encrypted)
-ansible/vars/secrets.yml
+ansible/vars/secrets.yml.DS_Store

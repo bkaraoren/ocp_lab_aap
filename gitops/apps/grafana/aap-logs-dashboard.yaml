@@ -1,0 +1,48 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: aap-logs
+  namespace: grafana
+spec:
+  allowCrossNamespaceImport: false
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+  json: "{\n  \"annotations\": { \"list\": [] },\n  \"editable\": true,\n  \"graphTooltip\": 1,\n  \"panels\": [\n    {\n      \"collapsed\": false,\n      \"gridPos\": { \"h\": 1, \"w\": 24, \"x\": 0,\
+    \ \"y\": 0 },\n      \"title\": \"AAP Log Volume\",\n      \"type\": \"row\"\n    },\n    {\n      \"datasource\": { \"type\": \"loki\", \"uid\": \"loki-ocp\" },\n      \"fieldConfig\": { \"defaults\"\
+    : { \"color\": { \"mode\": \"palette-classic\" }, \"custom\": { \"fillOpacity\": 30, \"lineWidth\": 1, \"stacking\": { \"mode\": \"normal\" } } } },\n      \"gridPos\": { \"h\": 7, \"w\": 24, \"x\"\
+    : 0, \"y\": 1 },\n      \"options\": { \"legend\": { \"displayMode\": \"table\", \"placement\": \"right\", \"sortBy\": \"Total\", \"sortDesc\": true }, \"tooltip\": { \"mode\": \"multi\" } },\n    \
+    \  \"targets\": [{ \"expr\": \"sum by (kubernetes_container_name) (count_over_time({kubernetes_namespace_name=\\\"aap\\\"} [1m]))\", \"legendFormat\": \"{{ kubernetes_container_name }}\" }],\n     \
+    \ \"title\": \"Log Volume by Container (lines/min)\",\n      \"type\": \"timeseries\"\n    },\n    {\n      \"collapsed\": false,\n      \"gridPos\": { \"h\": 1, \"w\": 24, \"x\": 0, \"y\": 8 },\n \
+    \     \"title\": \"AAP Error & Warning Logs\",\n      \"type\": \"row\"\n    },\n    {\n      \"datasource\": { \"type\": \"loki\", \"uid\": \"loki-ocp\" },\n      \"fieldConfig\": { \"defaults\": {\
+    \ \"color\": { \"mode\": \"palette-classic\" }, \"custom\": { \"fillOpacity\": 40, \"lineWidth\": 1, \"stacking\": { \"mode\": \"normal\" } } } },\n      \"gridPos\": { \"h\": 6, \"w\": 12, \"x\": 0,\
+    \ \"y\": 9 },\n      \"options\": { \"legend\": { \"displayMode\": \"list\", \"placement\": \"bottom\" }, \"tooltip\": { \"mode\": \"multi\" } },\n      \"targets\": [\n        { \"expr\": \"sum(count_over_time({kubernetes_namespace_name=\\\
+    \"aap\\\"} |~ \\\"(?i)error\\\" [5m]))\", \"legendFormat\": \"Errors\" },\n        { \"expr\": \"sum(count_over_time({kubernetes_namespace_name=\\\"aap\\\"} |~ \\\"(?i)warn\\\" [5m]))\", \"legendFormat\"\
+    : \"Warnings\" }\n      ],\n      \"title\": \"Error & Warning Rate (lines/5min)\",\n      \"type\": \"timeseries\"\n    },\n    {\n      \"datasource\": { \"type\": \"loki\", \"uid\": \"loki-ocp\"\
+    \ },\n      \"fieldConfig\": { \"defaults\": { \"color\": { \"mode\": \"palette-classic\" }, \"custom\": { \"fillOpacity\": 40, \"lineWidth\": 1, \"stacking\": { \"mode\": \"normal\" } } } },\n    \
+    \  \"gridPos\": { \"h\": 6, \"w\": 12, \"x\": 12, \"y\": 9 },\n      \"options\": { \"legend\": { \"displayMode\": \"table\", \"placement\": \"right\", \"sortBy\": \"Total\", \"sortDesc\": true }, \"\
+    tooltip\": { \"mode\": \"multi\" } },\n      \"targets\": [{ \"expr\": \"sum by (kubernetes_container_name) (count_over_time({kubernetes_namespace_name=\\\"aap\\\"} |~ \\\"(?i)(error|exception|fatal|traceback)\\\
+    \" [5m]))\", \"legendFormat\": \"{{ kubernetes_container_name }}\" }],\n      \"title\": \"Errors by Component (lines/5min)\",\n      \"type\": \"timeseries\"\n    },\n    {\n      \"collapsed\": false,\n\
+    \      \"gridPos\": { \"h\": 1, \"w\": 24, \"x\": 0, \"y\": 15 },\n      \"title\": \"AAP Controller Logs\",\n      \"type\": \"row\"\n    },\n    {\n      \"datasource\": { \"type\": \"loki\", \"uid\"\
+    : \"loki-ocp\" },\n      \"gridPos\": { \"h\": 10, \"w\": 24, \"x\": 0, \"y\": 16 },\n      \"options\": { \"showTime\": true, \"showLabels\": false, \"showCommonLabels\": false, \"wrapLogMessage\"\
+    : true, \"prettifyLogMessage\": false, \"enableLogDetails\": true, \"sortOrder\": \"Descending\", \"dedupStrategy\": \"none\" },\n      \"targets\": [{ \"expr\": \"{kubernetes_namespace_name=\\\"aap\\\
+    \", kubernetes_container_name=~\\\"aap-controller-task|aap-controller-web\\\"}\", \"legendFormat\": \"\" }],\n      \"title\": \"Controller Task & Web Logs\",\n      \"type\": \"logs\"\n    },\n   \
+    \ {\n      \"collapsed\": false,\n      \"gridPos\": { \"h\": 1, \"w\": 24, \"x\": 0, \"y\": 26 },\n      \"title\": \"AAP Gateway Logs\",\n      \"type\": \"row\"\n    },\n    {\n      \"datasource\"\
+    : { \"type\": \"loki\", \"uid\": \"loki-ocp\" },\n      \"gridPos\": { \"h\": 10, \"w\": 24, \"x\": 0, \"y\": 27 },\n      \"options\": { \"showTime\": true, \"showLabels\": false, \"showCommonLabels\"\
+    : false, \"wrapLogMessage\": true, \"prettifyLogMessage\": false, \"enableLogDetails\": true, \"sortOrder\": \"Descending\", \"dedupStrategy\": \"none\" },\n      \"targets\": [{ \"expr\": \"{kubernetes_namespace_name=\\\
+    \"aap\\\", kubernetes_container_name=~\\\"aap-gateway\\\"}\", \"legendFormat\": \"\" }],\n      \"title\": \"Gateway Logs\",\n      \"type\": \"logs\"\n    },\n    {\n      \"collapsed\": false,\n \
+    \     \"gridPos\": { \"h\": 1, \"w\": 24, \"x\": 0, \"y\": 37 },\n      \"title\": \"AAP EDA Logs\",\n      \"type\": \"row\"\n    },\n    {\n      \"datasource\": { \"type\": \"loki\", \"uid\": \"\
+    loki-ocp\" },\n      \"gridPos\": { \"h\": 10, \"w\": 24, \"x\": 0, \"y\": 38 },\n      \"options\": { \"showTime\": true, \"showLabels\": false, \"showCommonLabels\": false, \"wrapLogMessage\": true,\
+    \ \"prettifyLogMessage\": false, \"enableLogDetails\": true, \"sortOrder\": \"Descending\", \"dedupStrategy\": \"none\" },\n      \"targets\": [{ \"expr\": \"{kubernetes_namespace_name=\\\"aap\\\",\
+    \ kubernetes_container_name=~\\\"aap-eda.*\\\"}\", \"legendFormat\": \"\" }],\n      \"title\": \"EDA Logs (API, Workers, Scheduler, Event Stream)\",\n      \"type\": \"logs\"\n    },\n    {\n     \
+    \ \"collapsed\": false,\n      \"gridPos\": { \"h\": 1, \"w\": 24, \"x\": 0, \"y\": 48 },\n      \"title\": \"AAP Hub Logs\",\n      \"type\": \"row\"\n    },\n    {\n      \"datasource\": { \"type\"\
+    : \"loki\", \"uid\": \"loki-ocp\" },\n      \"gridPos\": { \"h\": 10, \"w\": 24, \"x\": 0, \"y\": 49 },\n      \"options\": { \"showTime\": true, \"showLabels\": false, \"showCommonLabels\": false,\
+    \ \"wrapLogMessage\": true, \"prettifyLogMessage\": false, \"enableLogDetails\": true, \"sortOrder\": \"Descending\", \"dedupStrategy\": \"none\" },\n      \"targets\": [{ \"expr\": \"{kubernetes_namespace_name=\\\
+    \"aap\\\", kubernetes_container_name=~\\\"aap-hub.*\\\"}\", \"legendFormat\": \"\" }],\n      \"title\": \"Hub Logs (API, Content, Web, Worker)\",\n      \"type\": \"logs\"\n    },\n    {\n      \"\
+    collapsed\": false,\n      \"gridPos\": { \"h\": 1, \"w\": 24, \"x\": 0, \"y\": 59 },\n      \"title\": \"AAP Database & Redis Logs\",\n      \"type\": \"row\"\n    },\n    {\n      \"datasource\":\
+    \ { \"type\": \"loki\", \"uid\": \"loki-ocp\" },\n      \"gridPos\": { \"h\": 8, \"w\": 24, \"x\": 0, \"y\": 60 },\n      \"options\": { \"showTime\": true, \"showLabels\": false, \"showCommonLabels\"\
+    : false, \"wrapLogMessage\": true, \"prettifyLogMessage\": false, \"enableLogDetails\": true, \"sortOrder\": \"Descending\", \"dedupStrategy\": \"none\" },\n      \"targets\": [{ \"expr\": \"{kubernetes_namespace_name=\\\
+    \"aap\\\", kubernetes_container_name=~\\\"aap-postgres.*|aap-redis.*|postgresql|redis\\\"}\", \"legendFormat\": \"\" }],\n      \"title\": \"PostgreSQL & Redis Logs\",\n      \"type\": \"logs\"\n  \
+    \  }\n  ],\n  \"refresh\": \"30s\",\n  \"schemaVersion\": 39,\n  \"tags\": [\"aap\", \"logs\", \"loki\"],\n  \"time\": { \"from\": \"now-1h\", \"to\": \"now\" },\n  \"title\": \"AAP Application Logs\"\
+    ,\n  \"uid\": \"aap-application-logs\"\n}\n"
+

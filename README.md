@@ -29,6 +29,7 @@
 19. [AAP Credential Lookup via HashiCorp Vault](#19-aap-credential-lookup-via-hashicorp-vault)
 20. [AAP Slack Notification Template](#20-aap-slack-notification-template)
 21. [Grafana & AAP Metrics Dashboard](#21-grafana--aap-metrics-dashboard)
+22. [Centralized Logging (LokiStack)](#22-centralized-logging-lokistack)
 
 ---
 
@@ -1246,6 +1247,7 @@ All secrets are stored in HashiCorp Vault under organized paths. No sensitive va
 | `secret/ocp/cert-renewal-sa` | OCP ServiceAccount bearer token & API host | AAP Vault Lookup (cert renewal) |
 | `secret/ocp/grafana` | Grafana admin username & password | Grafana fallback admin login |
 | `secret/ocp/grafana-oauth` | Google OAuth client_id & client_secret | Grafana Google OIDC login |
+| `secret/ocp/minio` | MinIO access_key, secret_key, endpoint, bucket | LokiStack S3 storage backend |
 
 ### 12.2 Retrieving Secrets from Vault
 
@@ -2594,6 +2596,9 @@ The `aap` namespace has the `openshift.io/cluster-monitoring=true` label, so the
 | `gitops/apps/grafana/aap-dashboard.yaml` | GrafanaDashboard CR (AAP Overview) |
 | `gitops/apps/grafana/ocp-cluster-dashboard.yaml` | GrafanaDashboard CR (OCP Cluster Overview) |
 | `gitops/apps/grafana/ocp-virtualization-dashboard.yaml` | GrafanaDashboard CR (OCP Virtualization) |
+| `gitops/apps/grafana/loki-datasource.yaml` | GrafanaDatasource CRs (Loki application + infrastructure) |
+| `gitops/apps/grafana/aap-logs-dashboard.yaml` | GrafanaDashboard CR (AAP Application Logs) |
+| `gitops/apps/grafana/ocp-infra-logs-dashboard.yaml` | GrafanaDashboard CR (OCP Infrastructure Logs) |
 
 ### 21.8 Post-Deployment Steps
 
@@ -2611,4 +2616,107 @@ AAP_PASS=$(oc get secret aap-admin-password -n aap -o jsonpath='{.data.password}
 oc create secret generic aap-metrics-auth -n aap \
   --from-literal=username=admin \
   --from-literal=password="$AAP_PASS"
+```
+
+---
+
+## 22. Centralized Logging (LokiStack)
+
+### 22.1 Architecture
+
+```
+AAP Pods (aap, aap-exec, aap-portal) + Infrastructure
+  → Vector Collector (DaemonSet in openshift-logging)
+  → ClusterLogForwarder (filters AAP namespaces + infrastructure)
+  → LokiStack (1x.demo, openshift-logging tenant mode)
+  → MinIO (S3-compatible object storage, 50Gi NFS PVC)
+  → Grafana (Loki datasources for application + infrastructure logs)
+```
+
+### 22.2 Components Deployed
+
+| Component | Namespace | Description |
+|-----------|-----------|-------------|
+| Loki Operator v6.4.2 | `openshift-operators-redhat` | Red Hat Loki Operator from OperatorHub |
+| Cluster Logging Operator v6.4.2 | `openshift-logging` | Red Hat OpenShift Logging Operator |
+| LokiStack `logging-loki` | `openshift-logging` | Log aggregation (1x.demo size, 7-day retention) |
+| ClusterLogForwarder `collector` | `openshift-logging` | Collects AAP app logs + infra logs, forwards to Loki |
+| Vector DaemonSet `collector` | `openshift-logging` | Log collection agent on each node |
+| MinIO | `minio` | S3-compatible object store for Loki chunks (50Gi NFS) |
+| ServiceAccount `grafana-loki-reader` | `openshift-logging` | Reads logs from Loki gateway (application + infrastructure tenants) |
+| GrafanaDatasource `loki-logs` | `grafana` | Loki application logs datasource |
+| GrafanaDatasource `loki-infra-logs` | `grafana` | Loki infrastructure logs datasource |
+| GrafanaDashboard `aap-logs` | `grafana` | AAP Application Logs dashboard |
+| GrafanaDashboard `ocp-infra-logs` | `grafana` | OCP Infrastructure Logs dashboard |
+
+### 22.3 Log Collection Scope
+
+| Pipeline | Input | Namespaces | Description |
+|----------|-------|------------|-------------|
+| `aap-application-logs` | `aap-logs` | `aap`, `aap-exec`, `aap-portal` | All AAP component logs |
+| `infra-logs` | `infrastructure` | All infra namespaces | OCP infrastructure logs (kubelet, CRI-O, etc.) |
+
+### 22.4 Grafana Log Dashboards
+
+**AAP Application Logs** (`aap-application-logs`):
+- Log volume by container (lines/min, stacked)
+- Error & warning rate (lines/5min)
+- Errors by component
+- Controller task & web log stream
+- Gateway log stream
+- EDA log stream (API, workers, scheduler, event stream)
+- Hub log stream (API, content, web, worker)
+- PostgreSQL & Redis log stream
+
+**OCP Infrastructure Logs** (`ocp-infra-logs`):
+- Infrastructure log volume (lines/min)
+- Error & warning rate
+- Infrastructure log stream viewer
+
+### 22.5 MinIO Configuration
+
+| Setting | Value |
+|---------|-------|
+| **Endpoint** | `http://minio.minio.svc:9000` |
+| **Buckets** | `loki`, `loki-ruler` |
+| **Storage** | 50 Gi NFS PVC (`nfs-csi` StorageClass) |
+| **Credentials** | Stored in Vault at `secret/ocp/minio` |
+
+### 22.6 GitOps Manifests
+
+| File | Description |
+|------|-------------|
+| `gitops/operators/loki/subscription.yaml` | Loki Operator Namespace, OperatorGroup, Subscription |
+| `gitops/operators/logging/subscription.yaml` | Cluster Logging Namespace, OperatorGroup, Subscription |
+| `gitops/apps/minio/deployment.yaml` | MinIO Namespace, PVC, Deployment, Service |
+| `gitops/apps/loki/lokistack.yaml` | LokiStack CR + S3 Secret (placeholder credentials) |
+| `gitops/apps/loki/clusterlogforwarder.yaml` | Collector SA, RBAC, ClusterLogForwarder CR |
+| `gitops/apps/loki/grafana-reader.yaml` | Grafana Loki reader SA, ClusterRoles, ClusterRoleBindings, SA token |
+| `gitops/apps/grafana/loki-datasource.yaml` | Loki GrafanaDatasource CRs (application + infrastructure) |
+| `gitops/apps/grafana/aap-logs-dashboard.yaml` | GrafanaDashboard CR (AAP Logs) |
+| `gitops/apps/grafana/ocp-infra-logs-dashboard.yaml` | GrafanaDashboard CR (OCP Infrastructure Logs) |
+
+### 22.7 Post-Deployment Steps
+
+```bash
+# 1. Create MinIO credentials secret (values from Vault at secret/ocp/minio)
+oc create secret generic minio-credentials -n minio \
+  --from-literal=MINIO_ROOT_USER=<access_key> \
+  --from-literal=MINIO_ROOT_PASSWORD=<secret_key>
+
+# 2. Create Loki S3 secret (same MinIO credentials)
+oc create secret generic logging-loki-s3 -n openshift-logging \
+  --from-literal=access_key_id=<access_key> \
+  --from-literal=access_key_secret=<secret_key> \
+  --from-literal=bucketnames=loki \
+  --from-literal=endpoint=http://minio.minio.svc:9000 \
+  --from-literal=region=us-east-1
+
+# 3. Create MinIO buckets
+oc run minio-init --rm -i --restart=Never -n minio --image=quay.io/minio/mc:latest -- \
+  sh -c 'export MC_CONFIG_DIR=/tmp/.mc && mc alias set local http://minio.minio.svc:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD && mc mb --ignore-existing local/loki && mc mb --ignore-existing local/loki-ruler'
+
+# 4. Update Loki datasource with reader token
+LOKI_TOKEN=$(oc get secret grafana-loki-reader-token -n openshift-logging -o jsonpath='{.data.token}' | base64 -d)
+# Replace <REPLACE_WITH_GRAFANA_LOKI_READER_TOKEN> in loki-datasource.yaml with $LOKI_TOKEN
 ```
