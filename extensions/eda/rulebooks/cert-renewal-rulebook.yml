@@ -1,0 +1,24 @@
+---
+- name: Certificate Expiry Auto-Renewal
+  hosts: all
+  sources:
+    - ansible.eda.alertmanager:
+        host: 0.0.0.0
+        port: 5000
+        data_alerts_path: alerts
+        data_host_path: alerts[0].labels.instance
+        data_path_separator: .
+
+  rules:
+    - name: Renew certificates when expiring in 3 days or less
+      condition: >-
+        event.alert.status == "firing"
+        and event.alert.labels.alertname == "CertificateExpiringIn3Days"
+      throttle:
+        once_within: 24 hours
+        group_by_attributes:
+          - event.alert.labels.alertname
+      action:
+        run_job_template:
+          name: "Renew Let's Encrypt Certificates"
+          organization: Default
