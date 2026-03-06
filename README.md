@@ -22,7 +22,7 @@
 12. [Secrets Stored in Vault](#12-secrets-stored-in-vault)
 13. [GitOps Deployment](#13-gitops-deployment)
 14. [Ansible Playbooks (Alternative to Shell Scripts)](#14-ansible-playbooks-alternative-to-shell-scripts)
-15. [Automated Certificate Renewal (AAP Scheduled Job)](#15-automated-certificate-renewal-aap-scheduled-job)
+15. [Automated Certificate Renewal (Event-Driven via EDA)](#15-automated-certificate-renewal-event-driven-via-eda)
 16. [AAP Execution Node (RHEL 9 VM)](#16-aap-execution-node-rhel-9-vm)
 17. [Node System Tuning (Kubelet Reserved Resources)](#17-node-system-tuning-kubelet-reserved-resources)
 18. [Static IP Configuration (Hetzner DHCP Deprecation)](#18-static-ip-configuration-hetzner-dhcp-deprecation)
@@ -1590,54 +1590,59 @@ ansible-playbook playbooks/site.yml -e @vars/secrets.yml --ask-vault-pass \
 
 ---
 
-## 15. Automated Certificate Renewal (AAP Scheduled Job)
+## 15. Automated Certificate Renewal (Event-Driven via EDA)
 
-Let's Encrypt certificates expire after **90 days**. An AAP scheduled job runs every **60 days** (30-day safety margin) to automatically renew them, update Vault, and trigger ESO to sync the new certs to OCP.
+Let's Encrypt certificates expire after **90 days**. Instead of a fixed schedule, certificate renewal is now **event-driven** using Prometheus monitoring and AAP Event-Driven Automation (EDA). A daily CronJob checks the certificate expiry, pushes the metric to Prometheus, and when the certificate has **3 days or fewer** remaining, AlertManager triggers EDA to automatically renew.
 
 ### 15.1 Architecture
 
 ```
-Schedule (every 60 days) → Job Template → renew-certificates.yml
-  → acme.sh --renew (DNS-01 via name.com)
-  → Vault kv put secret/letsencrypt/certs (updated certs)
-  → ESO ExternalSecret refresh (annotate to force sync)
-  → OCP secrets updated (letsencrypt-wildcard, letsencrypt-api)
-  → IngressController + APIServer pick up new certs automatically
+CronJob (daily, checks cert expiry)
+  → Pushgateway (cert_expiry_days metric)
+    → Prometheus (scrapes metric)
+      → PrometheusRule (cert_expiry_days <= 3)
+        → AlertManager (CertificateExpiringIn3Days alert)
+          → EDA Event Stream (webhook POST)
+            → Rulebook Activation (cert-renewal-rulebook.yml)
+              → run_job_template: "Renew Let's Encrypt Certificates"
+                → acme.sh --renew → Vault → ESO → OCP certs updated
 ```
 
-### 15.2 AAP Resources Created
+### 15.2 Cert Monitor Components
 
-| Resource | Name | ID | Notes |
-|---|---|---|---|
-| Custom Credential Type | `Let's Encrypt Renewal Credentials` | 32 | |
-| Credential (external) | `HashiCorp Vault Lookup` | 5 | Source credential for all Vault lookups |
-| Credential (custom) | `LE Renewal - name.com + Vault` | 3 | Secret fields via Vault Lookup |
-| Credential (K8s) | `OCP Cluster - cert-renewal SA` | 4 | Bearer token via Vault Lookup |
-| Project | `OCP Lab - Certificate Management` | 10 | |
-| Inventory | `Localhost` | 2 | |
-| Job Template | `Renew Let's Encrypt Certificates` | 11 | |
-| Schedule | `Every 60 days - Certificate Renewal` | 6 | |
+| Component | Namespace | Resource Usage | Purpose |
+|-----------|-----------|---------------|---------|
+| Pushgateway | `cert-monitor` | ~9Mi RAM | Receives and stores cert expiry metrics |
+| CronJob `cert-expiry-checker` | `cert-monitor` | Runs daily at 06:00 UTC | Reads TLS secret, calculates days until expiry, pushes metric |
+| PrometheusRule | `cert-monitor` | — | Fires `CertificateExpiringIn3Days` when cert_expiry_days <= 3 |
+| AlertManager route | `openshift-monitoring` | — | Routes cert expiry alerts to EDA webhook + Slack |
 
-### 15.3 Custom Credential Type
+### 15.3 EDA Components
 
-Injects three extra vars into the playbook:
+| Component | Value |
+|-----------|-------|
+| EDA Project | `OCP Lab - EDA Rulebooks` (GitHub: bkaraoren/ocp_lab_aap) |
+| Decision Environment | `Default Decision Environment` (de-supported-rhel9) |
+| Event Stream | `AlertManager Certificate Expiry` (Basic auth) |
+| Rulebook | `cert-renewal-rulebook.yml` |
+| Activation | `Certificate Expiry Auto-Renewal` (status: running) |
+| Throttle | Once per 24 hours per alert |
 
-| Field | Type | Description |
+### 15.4 Alert Rules
+
+| Alert | Condition | Severity | Action |
+|-------|-----------|----------|--------|
+| `CertificateExpiringIn3Days` | `cert_expiry_days <= 3` | critical | Triggers EDA → renewal job template |
+| `CertificateExpiringIn14Days` | `cert_expiry_days <= 14` | warning | Slack notification only |
+
+### 15.5 AAP Resources (unchanged)
+
+| Resource | Name | Notes |
 |---|---|---|
-| `namecom_username` | string | name.com API username |
-| `namecom_api_token` | string (secret) | name.com API token |
-| `vault_root_token` | string (secret) | Vault root token for updating certs |
-
-### 15.4 Schedule Details
-
-```
-RRULE: DTSTART:20260223T020000Z RRULE:FREQ=DAILY;INTERVAL=60
-```
-
-- **Frequency:** Every 60 days
-- **Start:** February 23, 2026 at 02:00 UTC
-- **Next run:** April 24, 2026 at 02:00 UTC
-- **Safety margin:** 30 days before cert expiry (90 - 60 = 30)
+| Credential (custom) | `LE Renewal - name.com + Vault` | Secret fields via Vault Lookup |
+| Credential (K8s) | `OCP Cluster - cert-renewal SA` | Bearer token via Vault Lookup |
+| Project | `OCP Lab - Certificate Management` | Cert renewal playbook |
+| Job Template | `Renew Let's Encrypt Certificates` | Triggered by EDA (previously scheduled) |
 
 ### 15.5 OCP ServiceAccount for AAP EE
 
@@ -1733,21 +1738,44 @@ ansible-playbook playbooks/setup-cert-renewal-job.yml \
 | Credential (K8s) | `OCP Cluster - cert-renewal SA` | 4 | Bearer token via Vault Lookup |
 | Project | `OCP Lab - Certificate Management` | 10 | |
 | Inventory | `Localhost` | 2 | |
-| Job Template | `Renew Let's Encrypt Certificates` | 11 | |
-| Schedule | `Every 60 days - Certificate Renewal` | 6 | |
+| Job Template | `Renew Let's Encrypt Certificates` | 11 | Triggered by EDA (no longer scheduled) |
 
-### 15.11 Resource Operator CRs (GitOps)
-
-GitOps-managed YAML files are available at `gitops/apps/cert-renewal/`:
+### 15.11 GitOps Manifests
 
 ```
-gitops/apps/cert-renewal/
-├── connection-secret.yaml    # AAP connection secret
-├── service-account.yaml      # ServiceAccount + RBAC + token for EE cluster access
-├── project.yaml              # AnsibleProject CR
-├── job-template.yaml         # JobTemplate CR
-├── schedule.yaml             # AnsibleSchedule CR (60-day RRULE)
+gitops/apps/cert-renewal/             # AAP cert renewal job template
+├── connection-secret.yaml
+├── service-account.yaml
+├── project.yaml
+├── job-template.yaml
 └── kustomization.yaml
+
+gitops/apps/cert-monitor/             # Prometheus cert monitoring
+├── pushgateway.yaml                  # Pushgateway Deployment, Service, ServiceMonitor
+├── cert-expiry-checker.yaml          # CronJob, SA, RBAC, ConfigMap (Python script)
+└── prometheus-rule.yaml              # PrometheusRule (cert expiry alerts)
+
+extensions/eda/rulebooks/             # EDA rulebooks
+└── cert-renewal-rulebook.yml         # AlertManager → run_job_template
+```
+
+The EDA project, decision environment, event stream, and rulebook activation are configured via the AAP EDA API (not declarative CRs).
+
+### 15.12 Deploy from Scratch
+
+```bash
+# 1. Deploy cert monitoring
+oc apply -f gitops/apps/cert-monitor/pushgateway.yaml
+oc apply -f gitops/apps/cert-monitor/cert-expiry-checker.yaml
+oc apply -f gitops/apps/cert-monitor/prometheus-rule.yaml
+
+# 2. Run initial cert check to push metrics
+oc create job --from=cronjob/cert-expiry-checker initial-check -n cert-monitor
+
+# 3. Update AlertManager with EDA webhook (see gitops/cluster/monitoring/alertmanager.yaml)
+
+# 4. Configure EDA via API (project, DE, event stream, activation)
+# See README Section 15.3 for component details
 ```
 
 ### 15.12 Tested Renewal Flow (Verified Feb 23, 2026)

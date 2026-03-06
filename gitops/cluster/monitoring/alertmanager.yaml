@@ -70,6 +70,27 @@ receivers:
         {{ range .Labels.SortedPairs }} • *{{ .Name }}:* `{{ .Value }}`
         {{ end }}
       {{ end }}
+- name: EDA-CertRenewal
+  webhook_configs:
+  - url: "REPLACE_WITH_EDA_EVENT_STREAM_URL"
+    http_config:
+      basic_auth:
+        username: alertmanager
+        password: "REPLACE_WITH_VAULT_SECRET_ocp_eda_alertmanager_webhook_password"
+    send_resolved: false
+  slack_configs:
+  - channel: "#alerts-ocp-karaoren"
+    send_resolved: true
+    title: |-
+      🔒 CERT RENEWAL [{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}
+    text: >-
+      {{ range .Alerts -}}
+      *Alert:* {{ .Labels.alertname }}
+
+      *Summary:* {{ .Annotations.summary }}
+
+      EDA rulebook activation will trigger automatic certificate renewal.
+      {{ end }}
 route:
   group_by:
   - namespace
@@ -82,6 +103,11 @@ route:
     - "alertname = Watchdog"
     receiver: Watchdog
     repeat_interval: 24h
+  - matchers:
+    - "alertname = CertificateExpiringIn3Days"
+    receiver: EDA-CertRenewal
+    repeat_interval: 6h
+    continue: true
   - matchers:
     - "severity = critical"
     receiver: Critical

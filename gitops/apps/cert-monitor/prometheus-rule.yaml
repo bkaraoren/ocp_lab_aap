@@ -1,0 +1,36 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: cert-expiry-alerts
+  namespace: cert-monitor
+  labels:
+    app: cert-monitor
+spec:
+  groups:
+  - name: certificate-expiry
+    interval: 1h
+    rules:
+    - alert: CertificateExpiringIn3Days
+      expr: cert_expiry_days <= 3
+      for: 0m
+      labels:
+        severity: critical
+        source: cert-monitor
+      annotations:
+        summary: "TLS certificate for {{ $labels.domain }} expires in {{ $value }} days"
+        description: >-
+          The Let's Encrypt TLS certificate for {{ $labels.domain }} will expire
+          in {{ $value }} days. Automatic renewal via EDA should be triggered.
+        runbook_url: "https://github.com/bkaraoren/ocp_lab_aap#15-automated-certificate-renewal-aap-scheduled-job"
+    - alert: CertificateExpiringIn14Days
+      expr: cert_expiry_days <= 14
+      for: 0m
+      labels:
+        severity: warning
+        source: cert-monitor
+      annotations:
+        summary: "TLS certificate for {{ $labels.domain }} expires in {{ $value }} days"
+        description: >-
+          The Let's Encrypt TLS certificate for {{ $labels.domain }} will expire
+          in {{ $value }} days. This is a warning — renewal should happen automatically
+          when 3 days remain.

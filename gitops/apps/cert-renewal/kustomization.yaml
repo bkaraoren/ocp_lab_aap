@@ -5,4 +5,3 @@ resources:
   - connection-secret.yaml
   - project.yaml
   - job-template.yaml
-  - schedule.yaml
