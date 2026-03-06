@@ -15,7 +15,7 @@ cluster_domain: ocp.karaoren.eu
 cluster_apps_domain: "apps.{{ cluster_domain }}"
 cluster_api_host: "api.{{ cluster_domain }}"
 
-# ─── Git Repo (for ArgoCD) ───
+# ─── Git Repo (for ArgoCD / EDA) ───
 git_repo_url: "https://github.com/bkaraoren/ocp_lab_aap.git"
 git_repo_branch: main
 
@@ -26,11 +26,14 @@ aap_portal_namespace: aap-portal
 nfs_namespace: nfs-server
 eso_namespace: external-secrets
 gitops_namespace: openshift-gitops
+grafana_namespace: grafana
+loki_namespace: loki
+cert_monitor_namespace: cert-monitor
 
 # ─── GitOps directory (relative to repo root) ───
 gitops_dir: "{{ playbook_dir }}/../gitops"
 
-# ─── OAuth ───
+# ─── OAuth (Cluster OIDC — OCP, AAP, Vault) ───
 google_client_id: "775961166307-rio3vds58fl05idalb7c7tbpqjr64vqi.apps.googleusercontent.com"
 # google_client_secret: SET VIA SECRETS FILE OR --extra-vars
 
@@ -39,20 +42,31 @@ github_client_id: "Ov23liZJ6JiMGlAX9Z06"
 
 # ─── Vault ───
 vault_pod: vault-0
+vault_url: "https://vault-{{ vault_namespace }}.{{ cluster_apps_domain }}"
+vault_api_version: v2
 # vault_root_token: SET VIA SECRETS FILE OR --extra-vars
 # vault_unseal_key: SET VIA SECRETS FILE OR --extra-vars
+# vault_aap_integration_token: SET VIA SECRETS FILE OR --extra-vars
 
 # ─── AAP ───
 aap_admin_user: admin
 aap_superuser_email: bkaraore@redhat.com
 aap_google_hosted_domain: redhat.com
+aap_route_host: "aap-{{ aap_namespace }}.{{ cluster_apps_domain }}"
 
 # ─── Portal ───
 portal_helm_chart: openshift-helm-charts/redhat-rhaap-portal
 portal_helm_version: "2.1.0"
 portal_route_host: "rhaap-portal-{{ aap_portal_namespace }}.{{ cluster_apps_domain }}"
 
-# ─── Slack ───
+# ─── Grafana ───
+grafana_route_host: "grafana-route-{{ grafana_namespace }}.{{ cluster_apps_domain }}"
+grafana_oidc_allowed_domain: redhat.com
+grafana_admin_email: bkaraore@redhat.com
+# grafana_oauth_client_id: SET VIA SECRETS FILE OR --extra-vars
+# grafana_oauth_client_secret: SET VIA SECRETS FILE OR --extra-vars
+
+# ─── Slack (AlertManager + Grafana alerts) ───
 slack_channel: "#alerts-ocp-karaoren"
 # slack_webhook_url: SET VIA SECRETS FILE OR --extra-vars
 
@@ -64,9 +78,41 @@ cert_domains:
 # namecom_username: SET VIA SECRETS FILE OR --extra-vars
 # namecom_api_token: SET VIA SECRETS FILE OR --extra-vars
 
+# ─── Certificate Monitoring (EDA) ───
+cert_expiry_warning_days: 14
+cert_expiry_critical_days: 3
+cert_monitor_cronjob_schedule: "0 6 * * *"
+pushgateway_image: "prom/pushgateway:v1.11.0"
+
+# ─── EDA ───
+eda_decision_environment_image: "registry.redhat.io/ansible-automation-platform-25/de-supported-rhel9:latest"
+eda_rulebook_path: "extensions/eda/rulebooks/cert-renewal-rulebook.yml"
+
+# ─── Centralized Logging (Loki) ───
+loki_image: "grafana/loki:3.4.2"
+loki_retention_days: 30
+loki_storage_size: 10Gi
+aap_log_aggregator_loggers:
+  - awx
+  - job_events
+  - job_lifecycle
+
+# ─── AAP Execution Node (RHEL 9 VM) ───
+exec_node_vm_name: aap-exec-node
+exec_node_cpus: 2
+exec_node_memory: 4Gi
+exec_node_disk_size: 30Gi
+
 # ─── NFS ───
 nfs_backing_storage_size: 100Gi
 nfs_backing_storage_class: lvms-vm-vg1
+
+# ─── Network (NMState — Static IP) ───
+static_ip_address: "YOUR_SERVER_IP/32"
+static_ip_gateway: "YOUR_GATEWAY_IP"
+dns_servers:
+  - "185.12.64.1"
+  - "185.12.64.2"
 
 # ─── Timeouts ───
 operator_install_timeout: 600
