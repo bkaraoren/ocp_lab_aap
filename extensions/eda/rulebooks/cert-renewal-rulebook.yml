@@ -12,14 +12,12 @@
   rules:
     - name: Renew certificates when expiring in 3 days or less
       condition: >-
-        event.status is defined
-        and event.status == "firing"
-        and event.alerts is defined
-        and event.alerts[0].labels.alertname == "CertificateExpiringIn3Days"
+        event.alert.status == "firing"
+        and event.alert.labels.alertname == "CertificateExpiringIn3Days"
       throttle:
         once_within: 24 hours
         group_by_attributes:
-          - event.alerts[0].labels.alertname
+          - event.alert.labels.alertname
       action:
         run_job_template:
           name: "Renew Let's Encrypt Certificates"

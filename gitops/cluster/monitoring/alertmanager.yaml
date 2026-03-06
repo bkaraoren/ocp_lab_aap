@@ -72,11 +72,7 @@ receivers:
       {{ end }}
 - name: EDA-CertRenewal
   webhook_configs:
-  - url: "REPLACE_WITH_EDA_EVENT_STREAM_URL"
-    http_config:
-      basic_auth:
-        username: alertmanager
-        password: "REPLACE_WITH_VAULT_SECRET_ocp_eda_alertmanager_webhook_password"
+  - url: "http://certificate-expiry-auto-renewal.aap.svc:5000/"
     send_resolved: false
   slack_configs:
   - channel: "#alerts-ocp-karaoren"
