@@ -29,6 +29,7 @@
 19. [AAP Credential Lookup via HashiCorp Vault](#19-aap-credential-lookup-via-hashicorp-vault)
 20. [AAP Slack Notification Template](#20-aap-slack-notification-template)
 21. [Grafana & AAP Metrics Dashboard](#21-grafana--aap-metrics-dashboard)
+22. [Centralized Logging (Loki)](#22-centralized-logging-loki)
 
 ---
 
@@ -2613,3 +2614,107 @@ oc create secret generic aap-metrics-auth -n aap \
   --from-literal=password="$AAP_PASS"
 ```
 
+---
+
+## 22. Centralized Logging (Loki)
+
+AAP automation execution logs are collected and stored in an on-cluster **Loki** instance (monolithic mode, single binary) and visualized through the existing **Grafana** deployment.
+
+### Architecture
+
+```
+AAP Controller ──TCP:8081──▶ AAP-Loki Adapter ──HTTP──▶ Loki ◀──── Grafana
+                                (Python bridge)        (monolithic)  (Loki datasource)
+```
+
+- **Loki** (monolithic mode): Lightweight log storage (~65Mi RAM), 10Gi PVC, 30-day retention
+- **AAP-Loki Adapter**: Tiny Python service (~15Mi RAM) that receives AAP's TCP log stream and converts to Loki push format
+- **AAP External Logging**: Built-in feature configured via AAP Settings > Logging WebUI
+
+### What Logs Are Collected
+
+Only AAP execution-related logs (configured via `LOG_AGGREGATOR_LOGGERS`):
+- `awx` — General AWX application logs
+- `job_events` — Ansible playbook task execution events
+- `job_lifecycle` — Job state transitions (pending → running → successful/failed)
+
+### AAP Logging Configuration
+
+Configured in AAP WebUI: **Settings → Logging** (or via API at `/api/controller/v2/settings/logging/`)
+
+| Setting | Value |
+|---------|-------|
+| Logging Aggregator | `aap-loki-adapter.loki.svc` |
+| Logging Aggregator Port | `8081` |
+| Logging Aggregator Type | Other |
+| Logging Aggregator Protocol | TCP |
+| Enable External Logging | Yes |
+| Loggers to Send Data to the Log Aggregator | `awx`, `job_events`, `job_lifecycle` |
+| Log Aggregator Level Threshold | INFO |
+| TCP Connection Timeout | 5 seconds |
+| Enable/Disable HTTPS Certificate Verification | No (internal cluster traffic) |
+
+### Grafana Integration
+
+- **Datasource**: `Loki` → `http://loki.loki.svc:3100`
+- **Dashboard**: "AAP Execution Logs" with panels:
+  - Log Volume (bar chart by logger)
+  - Job Lifecycle Events
+  - Job Events (Ansible task output)
+  - All AAP Logs (with text search)
+
+### Loki Details
+
+| Feature | Value |
+|---------|-------|
+| Namespace | `loki` |
+| Mode | Monolithic (single binary) |
+| Image | `grafana/loki:3.4.2` |
+| Storage | Local filesystem (10Gi PVC) |
+| Retention | 30 days |
+| Schema | TSDB v13 |
+| Auth | Disabled (cluster-internal only) |
+| Memory | ~65Mi |
+| CPU | ~4m |
+
+### GitOps Manifests
+
+| File | Description |
+|------|-------------|
+| `gitops/apps/loki/loki-deployment.yaml` | Loki namespace, PVC, ConfigMap, Deployment, Service |
+| `gitops/apps/loki/aap-loki-adapter.yaml` | Adapter ConfigMap, Deployment, Service |
+| `gitops/apps/grafana/loki-datasource.yaml` | Grafana Loki datasource |
+| `gitops/apps/grafana/aap-execution-logs-dashboard.yaml` | AAP Execution Logs dashboard |
+
+### Deploy from Scratch
+
+```bash
+# Deploy Loki
+oc apply -f gitops/apps/loki/loki-deployment.yaml
+
+# Deploy AAP-Loki Adapter
+oc apply -f gitops/apps/loki/aap-loki-adapter.yaml
+
+# Add Loki datasource to Grafana
+oc apply -f gitops/apps/grafana/loki-datasource.yaml
+
+# Add AAP Execution Logs dashboard
+oc apply -f gitops/apps/grafana/aap-execution-logs-dashboard.yaml
+
+# Configure AAP external logging (via API)
+AAP_PASS=$(oc get secret -n aap aap-admin-password -o jsonpath='{.data.password}' | base64 -d)
+curl -sk -X PATCH -u "admin:${AAP_PASS}" \
+  -H "Content-Type: application/json" \
+  "https://aap-aap.apps.ocp.karaoren.eu/api/controller/v2/settings/logging/" \
+  -d '{
+    "LOG_AGGREGATOR_HOST": "aap-loki-adapter.loki.svc",
+    "LOG_AGGREGATOR_PORT": 8081,
+    "LOG_AGGREGATOR_TYPE": "other",
+    "LOG_AGGREGATOR_PROTOCOL": "tcp",
+    "LOG_AGGREGATOR_ENABLED": true,
+    "LOG_AGGREGATOR_LOGGERS": ["awx", "job_events", "job_lifecycle"],
+    "LOG_AGGREGATOR_LEVEL": "INFO",
+    "LOG_AGGREGATOR_VERIFY_CERT": false,
+    "LOG_AGGREGATOR_TCP_TIMEOUT": 5
+  }'
+```

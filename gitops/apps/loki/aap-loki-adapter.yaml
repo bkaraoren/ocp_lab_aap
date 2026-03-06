@@ -1,0 +1,174 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aap-loki-adapter
+  namespace: loki
+data:
+  adapter.py: |
+    import json, time, urllib.request, socketserver, threading, http.server, sys
+
+    LOKI_URL = "http://loki.loki.svc:3100/loki/api/v1/push"
+
+    def push_to_loki(entry):
+        try:
+            labels = {
+                "source": "aap",
+                "logger": entry.get("logger_name", "unknown"),
+                "level": entry.get("level", "INFO"),
+            }
+
+            msg = entry.get("message", "")
+            if isinstance(msg, dict):
+                if "job_id" in msg:
+                    labels["job_id"] = str(msg.get("job_id", ""))
+                if "task" in msg:
+                    labels["task"] = str(msg.get("task", ""))
+                if "host" in msg:
+                    labels["host"] = str(msg.get("host", ""))
+                if "playbook" in msg:
+                    labels["playbook"] = str(msg.get("playbook", ""))
+                msg = json.dumps(msg)
+
+            ts = str(int(time.time() * 1e9))
+            payload = json.dumps({
+                "streams": [{
+                    "stream": {k: str(v) for k, v in labels.items() if v},
+                    "values": [[ts, str(msg)]]
+                }]
+            }).encode()
+
+            req = urllib.request.Request(
+                LOKI_URL,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST"
+            )
+            urllib.request.urlopen(req, timeout=5)
+        except Exception as e:
+            print(f"Loki push error: {e}", file=sys.stderr, flush=True)
+
+    class TCPHandler(socketserver.StreamRequestHandler):
+        def handle(self):
+            print(f"TCP connection from {self.client_address}", flush=True)
+            for line in self.rfile:
+                try:
+                    line = line.decode().strip()
+                    if not line:
+                        continue
+                    entry = json.loads(line)
+                    push_to_loki(entry)
+                except json.JSONDecodeError:
+                    pass
+                except Exception as e:
+                    print(f"TCP handler error: {e}", file=sys.stderr, flush=True)
+
+    class HTTPHandler(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length)
+                entries = json.loads(body) if body else []
+                if isinstance(entries, dict):
+                    entries = [entries]
+                for entry in entries:
+                    push_to_loki(entry)
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"ok")
+            except Exception as e:
+                print(f"HTTP error: {e}", file=sys.stderr, flush=True)
+                self.send_response(500)
+                self.end_headers()
+                self.wfile.write(str(e).encode())
+
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"ok")
+
+        def log_message(self, fmt, *args):
+            pass
+
+    if __name__ == "__main__":
+        tcp_server = socketserver.ThreadingTCPServer(("0.0.0.0", 8081), TCPHandler)
+        tcp_thread = threading.Thread(target=tcp_server.serve_forever, daemon=True)
+        tcp_thread.start()
+        print("TCP listener on :8081", flush=True)
+
+        http_server = http.server.HTTPServer(("0.0.0.0", 8080), HTTPHandler)
+        print("HTTP listener on :8080", flush=True)
+        http_server.serve_forever()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aap-loki-adapter
+  namespace: loki
+  labels:
+    app: aap-loki-adapter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aap-loki-adapter
+  template:
+    metadata:
+      labels:
+        app: aap-loki-adapter
+    spec:
+      containers:
+      - name: adapter
+        image: python:3.12-alpine
+        command: ["python", "/app/adapter.py"]
+        ports:
+        - containerPort: 8080
+          name: http
+        - containerPort: 8081
+          name: tcp
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
+        readinessProbe:
+          httpGet:
+            path: /
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        volumeMounts:
+        - name: adapter-script
+          mountPath: /app
+      volumes:
+      - name: adapter-script
+        configMap:
+          name: aap-loki-adapter
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aap-loki-adapter
+  namespace: loki
+  labels:
+    app: aap-loki-adapter
+spec:
+  ports:
+  - port: 8080
+    targetPort: http
+    protocol: TCP
+    name: http
+  - port: 8081
+    targetPort: tcp
+    protocol: TCP
+    name: tcp
+  selector:
+    app: aap-loki-adapter

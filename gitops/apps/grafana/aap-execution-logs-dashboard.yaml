@@ -1,0 +1,135 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: aap-execution-logs
+  namespace: grafana
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+  json: |
+    {
+      "annotations": {"list": []},
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "links": [],
+      "panels": [
+        {
+          "title": "AAP Log Volume",
+          "type": "timeseries",
+          "gridPos": {"h": 6, "w": 24, "x": 0, "y": 0},
+          "datasource": {"type": "loki", "uid": "${DS_LOKI}"},
+          "targets": [
+            {
+              "expr": "sum(count_over_time({source=\"aap\"} [1m])) by (logger)",
+              "legendFormat": "{{logger}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "drawStyle": "bars",
+                "fillOpacity": 50,
+                "stacking": {"mode": "normal"}
+              },
+              "unit": "short"
+            }
+          },
+          "options": {
+            "tooltip": {"mode": "multi"}
+          }
+        },
+        {
+          "title": "Job Lifecycle Events",
+          "type": "logs",
+          "gridPos": {"h": 10, "w": 24, "x": 0, "y": 6},
+          "datasource": {"type": "loki", "uid": "${DS_LOKI}"},
+          "targets": [
+            {
+              "expr": "{source=\"aap\", logger=~\"awx.analytics.job_lifecycle|awx.main.commands.run_callback_receiver\"}",
+              "refId": "A"
+            }
+          ],
+          "options": {
+            "showTime": true,
+            "showLabels": true,
+            "showCommonLabels": false,
+            "wrapLogMessage": true,
+            "prettifyLogMessage": false,
+            "enableLogDetails": true,
+            "sortOrder": "Descending",
+            "dedupStrategy": "none"
+          }
+        },
+        {
+          "title": "Job Events (Ansible Task Output)",
+          "type": "logs",
+          "gridPos": {"h": 12, "w": 24, "x": 0, "y": 16},
+          "datasource": {"type": "loki", "uid": "${DS_LOKI}"},
+          "targets": [
+            {
+              "expr": "{source=\"aap\", logger=~\"awx.analytics.job_events|job_events\"}",
+              "refId": "A"
+            }
+          ],
+          "options": {
+            "showTime": true,
+            "showLabels": true,
+            "showCommonLabels": false,
+            "wrapLogMessage": true,
+            "prettifyLogMessage": false,
+            "enableLogDetails": true,
+            "sortOrder": "Descending",
+            "dedupStrategy": "none"
+          }
+        },
+        {
+          "title": "All AAP Logs",
+          "type": "logs",
+          "gridPos": {"h": 12, "w": 24, "x": 0, "y": 28},
+          "datasource": {"type": "loki", "uid": "${DS_LOKI}"},
+          "targets": [
+            {
+              "expr": "{source=\"aap\"} |= `$search`",
+              "refId": "A"
+            }
+          ],
+          "options": {
+            "showTime": true,
+            "showLabels": true,
+            "showCommonLabels": false,
+            "wrapLogMessage": true,
+            "prettifyLogMessage": false,
+            "enableLogDetails": true,
+            "sortOrder": "Descending",
+            "dedupStrategy": "none"
+          }
+        }
+      ],
+      "schemaVersion": 39,
+      "tags": ["aap", "logs", "loki"],
+      "templating": {
+        "list": [
+          {
+            "name": "DS_LOKI",
+            "type": "datasource",
+            "query": "loki",
+            "current": {"text": "Loki", "value": "Loki"}
+          },
+          {
+            "name": "search",
+            "type": "textbox",
+            "label": "Search",
+            "current": {"text": "", "value": ""},
+            "options": [{"text": "", "value": "", "selected": true}]
+          }
+        ]
+      },
+      "time": {"from": "now-6h", "to": "now"},
+      "timepicker": {},
+      "timezone": "",
+      "title": "AAP Execution Logs",
+      "uid": "aap-execution-logs"
+    }
