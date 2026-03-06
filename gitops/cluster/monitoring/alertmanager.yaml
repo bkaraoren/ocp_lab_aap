@@ -72,7 +72,7 @@ receivers:
       {{ end }}
 - name: EDA-CertRenewal
   webhook_configs:
-  - url: "http://certificate-expiry-auto-renewal.aap.svc:5000/"
+  - url: "http://certificate-expiry-auto-renewal.aap.svc:5000/endpoint"
     send_resolved: false
   slack_configs:
   - channel: "#alerts-ocp-karaoren"
