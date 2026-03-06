@@ -20,5 +20,5 @@
           - event.alert.labels.alertname
       action:
         run_job_template:
-          name: "Renew Let's Encrypt Certificates"
+          name: "Renew Lets Encrypt Certificates"
           organization: Default
