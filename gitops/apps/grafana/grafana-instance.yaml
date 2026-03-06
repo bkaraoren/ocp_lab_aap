@@ -28,6 +28,8 @@ spec:
       admin_user: admin
     server:
       root_url: https://grafana-route-grafana.apps.ocp.karaoren.eu
+    unified_alerting:
+      enabled: "true"
     users:
       auto_assign_org_role: Viewer
   deployment:

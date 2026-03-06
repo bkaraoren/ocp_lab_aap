@@ -30,6 +30,7 @@
 20. [AAP Slack Notification Template](#20-aap-slack-notification-template)
 21. [Grafana & AAP Metrics Dashboard](#21-grafana--aap-metrics-dashboard)
 22. [Centralized Logging (Loki)](#22-centralized-logging-loki)
+23. [Grafana Slack Integration](#23-grafana-slack-integration)
 
 ---
 
@@ -2717,4 +2718,75 @@ curl -sk -X PATCH -u "admin:${AAP_PASS}" \
     "LOG_AGGREGATOR_VERIFY_CERT": false,
     "LOG_AGGREGATOR_TCP_TIMEOUT": 5
   }'
+```
+
+---
+
+## 23. Grafana Slack Integration
+
+Grafana is integrated with the `#ocp-alerts` Slack channel to send alert notifications when conditions are met (e.g., AAP job failures).
+
+### Configuration
+
+| Setting | Value |
+|---------|-------|
+| Contact Point Name | `Slack - OCP Alerts` |
+| Type | Slack (incoming webhook) |
+| Slack Channel | `#ocp-alerts` |
+| Webhook URL | Stored in Vault at `secret/ocp/slack` |
+| Bot Username | `Grafana OCP` |
+| Icon | `:grafana:` |
+
+### Default Notification Policy
+
+| Setting | Value |
+|---------|-------|
+| Default Receiver | `Slack - OCP Alerts` |
+| Group By | `grafana_folder`, `alertname` |
+| Group Wait | 30s |
+| Group Interval | 5m |
+| Repeat Interval | 4h |
+
+### Pre-configured Alert Rules
+
+| Alert | Condition | Severity |
+|-------|-----------|----------|
+| AAP Job Failures Detected | Any job with `failed` status in the last 5 minutes (via Loki) | Warning |
+
+### How to Add More Alerts
+
+In Grafana WebUI:
+1. Go to **Alerting → Alert rules → New alert rule**
+2. Select your datasource (Prometheus for metrics, Loki for logs)
+3. Define the query and threshold condition
+4. Alerts automatically route to the Slack contact point via the default notification policy
+
+### GitOps Manifests
+
+| File | Description |
+|------|-------------|
+| `gitops/apps/grafana/grafana-instance.yaml` | Grafana instance with unified alerting enabled |
+| `gitops/apps/grafana/slack-alerting.yaml` | API commands to configure Slack contact point and alert rules |
+
+### Deploy from Scratch
+
+The Slack contact point and alert rules are configured via the Grafana API after Grafana is deployed. See `gitops/apps/grafana/slack-alerting.yaml` for the complete set of API commands.
+
+```bash
+# Get credentials
+GRAFANA_URL="https://grafana-route-grafana.apps.ocp.karaoren.eu"
+GRAFANA_PASS="<admin-password>"
+SLACK_WEBHOOK=$(oc exec -n vault vault-0 -- sh -c "VAULT_TOKEN='<token>' vault kv get -field=webhook_url secret/ocp/slack")
+
+# Create Slack contact point
+curl -sk -X POST -u "admin:${GRAFANA_PASS}" \
+  -H "Content-Type: application/json" \
+  "${GRAFANA_URL}/api/v1/provisioning/contact-points" \
+  -d '{"name":"Slack - OCP Alerts","type":"slack","settings":{"url":"'${SLACK_WEBHOOK}'","recipient":"#ocp-alerts","username":"Grafana OCP","icon_emoji":":grafana:"}}'
+
+# Set Slack as default notification receiver
+curl -sk -X PUT -u "admin:${GRAFANA_PASS}" \
+  -H "Content-Type: application/json" \
+  "${GRAFANA_URL}/api/v1/provisioning/policies" \
+  -d '{"receiver":"Slack - OCP Alerts","group_by":["grafana_folder","alertname"],"group_wait":"30s","group_interval":"5m","repeat_interval":"4h"}'
 ```

@@ -1,0 +1,83 @@
+# Grafana Slack alerting configuration
+# The Slack contact point and notification policy are configured via the Grafana API
+# because the Grafana Operator does not natively support contact point CRDs.
+#
+# To configure after Grafana deployment:
+#
+# GRAFANA_URL="https://grafana-route-grafana.apps.ocp.karaoren.eu"
+# GRAFANA_PASS="<admin-password>"
+# SLACK_WEBHOOK="<slack-webhook-url>"
+#
+# 1. Create Slack contact point:
+# curl -sk -X POST -u "admin:${GRAFANA_PASS}" \
+#   -H "Content-Type: application/json" \
+#   "${GRAFANA_URL}/api/v1/provisioning/contact-points" \
+#   -d '{
+#     "name": "Slack - OCP Alerts",
+#     "type": "slack",
+#     "settings": {
+#       "url": "'${SLACK_WEBHOOK}'",
+#       "recipient": "#ocp-alerts",
+#       "username": "Grafana OCP",
+#       "icon_emoji": ":grafana:"
+#     }
+#   }'
+#
+# 2. Set Slack as default notification receiver:
+# curl -sk -X PUT -u "admin:${GRAFANA_PASS}" \
+#   -H "Content-Type: application/json" \
+#   "${GRAFANA_URL}/api/v1/provisioning/policies" \
+#   -d '{
+#     "receiver": "Slack - OCP Alerts",
+#     "group_by": ["grafana_folder", "alertname"],
+#     "group_wait": "30s",
+#     "group_interval": "5m",
+#     "repeat_interval": "4h"
+#   }'
+#
+# 3. Create AAP job failure alert rule:
+# curl -sk -X POST -u "admin:${GRAFANA_PASS}" \
+#   -H "Content-Type: application/json" \
+#   "${GRAFANA_URL}/api/v1/provisioning/alert-rules" \
+#   -d '{
+#     "title": "AAP Job Failures Detected",
+#     "ruleGroup": "AAP Alerts",
+#     "folderUID": "<grafana-folder-uid>",
+#     "condition": "C",
+#     "for": "0s",
+#     "noDataState": "OK",
+#     "execErrState": "OK",
+#     "data": [
+#       {
+#         "refId": "A",
+#         "datasourceUid": "__loki__",
+#         "model": {
+#           "expr": "count_over_time({source=\"aap\", logger=\"awx.analytics.job_lifecycle\"} |= \"failed\" [5m])",
+#           "refId": "A"
+#         },
+#         "relativeTimeRange": {"from": 300, "to": 0}
+#       },
+#       {
+#         "refId": "B",
+#         "datasourceUid": "-100",
+#         "model": {"type": "reduce", "expression": "A", "reducer": "sum", "refId": "B"},
+#         "relativeTimeRange": {"from": 300, "to": 0}
+#       },
+#       {
+#         "refId": "C",
+#         "datasourceUid": "-100",
+#         "model": {
+#           "type": "threshold",
+#           "expression": "B",
+#           "conditions": [{"evaluator": {"type": "gt", "params": [0]}}],
+#           "refId": "C"
+#         },
+#         "relativeTimeRange": {"from": 300, "to": 0}
+#       }
+#     ],
+#     "labels": {"severity": "warning", "source": "aap"},
+#     "annotations": {
+#       "summary": "AAP job failures detected in the last 5 minutes",
+#       "description": "Check the AAP Execution Logs dashboard for details."
+#     }
+#   }'
