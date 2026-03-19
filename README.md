@@ -31,6 +31,8 @@
 21. [Grafana & AAP Metrics Dashboard](#21-grafana--aap-metrics-dashboard)
 22. [Centralized Logging (Loki)](#22-centralized-logging-loki)
 23. [Grafana Slack Integration](#23-grafana-slack-integration)
+24. [Ansible MCP Server (AI Agent Integration)](#24-ansible-mcp-server-ai-agent-integration)
+25. [Ansible Lightspeed Intelligent Assistant](#25-ansible-lightspeed-intelligent-assistant)
 
 ---
 
@@ -393,6 +395,9 @@ spec:
     file_storage_storage_class: nfs-csi
     file_storage_access_mode: ReadWriteMany
     file_storage_size: 10Gi
+  mcp:
+    disabled: false
+    allow_write_operations: true
 ```
 
 ```bash
@@ -1111,6 +1116,8 @@ helm install rhaap-portal openshift-helm-charts/redhat-rhaap-portal \
 | HashiCorp Vault CE | vault | Helm | 0.32.0 (app 1.21.2) |
 | External Secrets Operator | external-secrets | Operator | stable-v1 |
 | Self-Service Portal | aap-portal | Helm | 2.1.0 (app 2.1.1) |
+| Ansible MCP Server | aap | Operator (CR) | 2.6 (Technology Preview) |
+| Ansible Lightspeed Assistant | aap | Operator (CR) | 2.6 (OpenAI GPT-4o) |
 | Let's Encrypt TLS | openshift-ingress / openshift-config | acme.sh | E7 (ECC) |
 
 ## Summary of Routes / URLs
@@ -1124,6 +1131,7 @@ helm install rhaap-portal openshift-helm-charts/redhat-rhaap-portal \
 | AAP Hub | https://aap-hub-aap.apps.ocp.karaoren.eu |
 | Vault UI | https://vault.apps.ocp.karaoren.eu |
 | Self-Service Portal | https://rhaap-portal-aap-portal.apps.ocp.karaoren.eu |
+| AAP MCP Server | https://aap-mcp-aap.apps.ocp.karaoren.eu |
 
 ---
 
@@ -2818,3 +2826,308 @@ curl -sk -X PUT -u "admin:${GRAFANA_PASS}" \
   "${GRAFANA_URL}/api/v1/provisioning/policies" \
   -d '{"receiver":"Slack - OCP Alerts","group_by":["grafana_folder","alertname"],"group_wait":"30s","group_interval":"5m","repeat_interval":"4h"}'
 ```
+
+---
+
+## 24. Ansible MCP Server (AI Agent Integration)
+
+**Date:** March 19, 2026
+**Purpose:** Deploy the Ansible MCP (Model Context Protocol) server on AAP 2.6 to enable external AI agents (Claude, Cursor, ChatGPT) to interact with the Ansible Automation Platform via a standardized interface.
+
+> **Note:** This is a Technology Preview feature in AAP 2.6. Not recommended for production use.
+
+### 24.1 Overview
+
+The Ansible MCP server acts as a bridge between external AI clients and the Ansible Automation Platform. AI agents can query information, execute workflows, and perform automation tasks using natural language prompts.
+
+**Available toolsets:**
+- `job_management` — List/launch/monitor jobs and workflows
+- `inventory_management` — Query inventories, hosts, groups
+- `system_monitoring` — Retrieve logs, health checks, audit
+- `user_management` — Manage users, teams, RBAC
+- `security_compliance` — Manage credentials, security policies
+- `platform_configuration` — System settings, licenses, execution environments
+
+### 24.2 Deployment
+
+The MCP server is deployed by adding the `mcp` component to the existing AAP custom resource:
+
+```yaml
+# Added to aap-cr.yaml under spec:
+  mcp:
+    disabled: false
+    allow_write_operations: true
+```
+
+**Access level:** `allow_write_operations: true` enables the AI agent to execute jobs and modify resources (subject to user-level RBAC via API token).
+
+```bash
+# Apply the updated CR
+oc apply -f gitops/apps/aap-instance/aap-cr.yaml
+
+# Verify deployment
+oc get deployments -n aap | grep mcp
+oc get pods -n aap | grep mcp
+
+# Get the MCP server route URL
+oc get route -n aap | grep mcp
+```
+
+### 24.3 Creating an API Token
+
+Each user creates their own API token. The AI agent inherits the user's RBAC permissions.
+
+1. Log in to AAP Gateway: https://aap-aap.apps.ocp.karaoren.eu
+2. Navigate to **Access Management** > **Users** > select your user
+3. Go to the **Tokens** tab > **Create token**
+4. Set **Scope** to **Write** (includes read)
+5. Copy and save the token (displayed only once)
+
+Or via CLI:
+
+```bash
+AAP_GW=$(oc get route aap -n aap -o jsonpath='{.spec.host}')
+AAP_PW=$(oc get secret aap-admin-password -n aap -o jsonpath='{.data.password}' | base64 -d)
+
+# Create a Personal Access Token (PAT)
+curl -sk -X POST \
+  -H "Content-Type: application/json" \
+  -u "admin:${AAP_PW}" \
+  "https://${AAP_GW}/api/gateway/v1/tokens/" \
+  -d '{"scope": "write", "description": "MCP Server Token"}'
+```
+
+### 24.4 Connecting Cursor IDE
+
+Add the following to your Cursor MCP settings (`.cursor/mcp.json` in your project or global settings).
+
+**Option A: Single endpoint (all 100 tools via one server):**
+
+```json
+{
+  "mcpServers": {
+    "aap-mcp": {
+      "type": "http",
+      "url": "https://aap-mcp-aap.apps.ocp.karaoren.eu/mcp",
+      "headers": {
+        "Authorization": "Bearer ${env:AAP_MCP_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+**Option B: Separate endpoints per toolset (better for tool name length limits):**
+
+```json
+{
+  "mcpServers": {
+    "aap-jobs": {
+      "type": "http",
+      "url": "https://aap-mcp-aap.apps.ocp.karaoren.eu/mcp/job_management",
+      "headers": {
+        "Authorization": "Bearer ${env:AAP_MCP_TOKEN}"
+      }
+    },
+    "aap-inventory": {
+      "type": "http",
+      "url": "https://aap-mcp-aap.apps.ocp.karaoren.eu/mcp/inventory_management",
+      "headers": {
+        "Authorization": "Bearer ${env:AAP_MCP_TOKEN}"
+      }
+    },
+    "aap-monitoring": {
+      "type": "http",
+      "url": "https://aap-mcp-aap.apps.ocp.karaoren.eu/mcp/system_monitoring",
+      "headers": {
+        "Authorization": "Bearer ${env:AAP_MCP_TOKEN}"
+      }
+    },
+    "aap-users": {
+      "type": "http",
+      "url": "https://aap-mcp-aap.apps.ocp.karaoren.eu/mcp/user_management",
+      "headers": {
+        "Authorization": "Bearer ${env:AAP_MCP_TOKEN}"
+      }
+    },
+    "aap-security": {
+      "type": "http",
+      "url": "https://aap-mcp-aap.apps.ocp.karaoren.eu/mcp/security_compliance",
+      "headers": {
+        "Authorization": "Bearer ${env:AAP_MCP_TOKEN}"
+      }
+    },
+    "aap-config": {
+      "type": "http",
+      "url": "https://aap-mcp-aap.apps.ocp.karaoren.eu/mcp/platform_configuration",
+      "headers": {
+        "Authorization": "Bearer ${env:AAP_MCP_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+Set the environment variable with your API token:
+
+```bash
+export AAP_MCP_TOKEN="<your-api-token>"
+```
+
+### 24.5 Verification
+
+In your AI agent's chat window, enter:
+> "What MCP tools are available for my Ansible Automation Platform?"
+
+The AI agent should return a list of available toolsets and tools.
+
+### 24.6 Security Model
+
+| Layer | Description |
+|-------|-------------|
+| **Server-level** | `allow_write_operations: true` — AI agent can make changes (global setting) |
+| **User-level** | API token inherits the user's RBAC permissions |
+| **Rejection** | Unauthorized actions are rejected by the AAP API |
+
+### 24.7 Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| 406 Status Code | Instruct AI tool to request JSON format first |
+| 400 Bad Request (self-signed cert) | Add `IGNORE_CERTIFICATE_ERRORS` extra setting (not needed with Let's Encrypt) |
+| Permissions changed post-deploy | Delete and recreate the AnsibleMCPServer CR |
+
+### 24.8 References
+
+- [Red Hat Documentation: Deploying Ansible MCP Server](https://docs.redhat.com/en/documentation/red_hat_ansible_automation_platform/2.6/html/installing_on_openshift_container_platform/deploy-ansible-mcp-server-operator-install)
+
+---
+
+## 25. Ansible Lightspeed Intelligent Assistant
+
+**Date:** March 19, 2026
+**Purpose:** Deploy the Ansible Lightspeed intelligent assistant on AAP 2.6 to provide an AI-powered chat interface within the AAP UI, using OpenAI GPT-4o as the LLM provider with MCP integration for real-time platform context.
+
+### 25.1 Overview
+
+The Ansible Lightspeed intelligent assistant is an embedded chat interface in the AAP UI that uses generative AI to answer questions about the Ansible Automation Platform. With MCP integration, it can also query live data from the platform (jobs, inventories, credentials, etc.).
+
+### 25.2 Architecture
+
+```
+User (AAP UI) → Lightspeed Chatbot API → OpenAI GPT-4o API
+                      ↕                        ↕
+              MCP Servers (sidecars)     LLM tool calls
+              ├── ansible-mcp-controller (AAP Controller context)
+              └── ansible-mcp-lightspeed (Lightspeed service context)
+```
+
+### 25.3 Components
+
+| Component | Namespace | Description |
+|-----------|-----------|-------------|
+| `aap-lightspeed-api` | `aap` | Lightspeed API service |
+| `aap-lightspeed-chatbot-api` | `aap` | Chatbot API with 3 containers (chatbot + 2 MCP sidecars) |
+| `chatbot-configuration-secret` | `aap` | OpenAI API key, model config, MCP URLs |
+| `AnsibleLightspeed` CR | `aap` | `aap-lightspeed` (auto-created by operator) |
+
+### 25.4 LLM Configuration
+
+| Setting | Value |
+|---------|-------|
+| **Provider** | OpenAI |
+| **Model** | `gpt-4o` |
+| **API URL** | `https://api.openai.com/v1` |
+| **Provider Type** | `openai` |
+| **API Key** | Stored in Vault at `secret/aap/lightspeed` |
+
+### 25.5 MCP Integration (Technology Preview)
+
+The chatbot is integrated with the AAP MCP server, enabling it to query live platform data during conversations.
+
+| Parameter | Value |
+|-----------|-------|
+| `aap_gateway_url` | `http://aap` (internal service) |
+| `aap_controller_url` | `http://aap-controller-service` (internal service) |
+
+**Chatbot pod containers:**
+- `ansible-chatbot` — Main chatbot UI/API
+- `ansible-mcp-controller` — MCP server for AAP Controller (jobs, inventories, hosts)
+- `ansible-mcp-lightspeed` — MCP server for Lightspeed service
+
+### 25.6 Deployment
+
+#### Step 1: Create the chatbot configuration secret
+
+```bash
+oc create secret generic chatbot-configuration-secret -n aap \
+  --from-literal=chatbot_model=gpt-4o \
+  --from-literal=chatbot_url=https://api.openai.com/v1 \
+  --from-literal=chatbot_token='<openai-api-key>' \
+  --from-literal=chatbot_llm_provider_type=openai \
+  --from-literal=aap_gateway_url=http://aap \
+  --from-literal=aap_controller_url=http://aap-controller-service
+```
+
+#### Step 2: Enable Lightspeed in the AAP CR
+
+```yaml
+# Added to aap-cr.yaml under spec:
+  lightspeed:
+    disabled: false
+    chatbot_config_secret_name: chatbot-configuration-secret
+```
+
+```bash
+oc apply -f gitops/apps/aap-instance/aap-cr.yaml
+```
+
+#### Step 3: Verify
+
+```bash
+# Check pods (expect lightspeed-api 1/1 and chatbot-api 3/3)
+oc get pods -n aap | grep lightspeed
+
+# Verify MCP containers
+oc get pod -n aap -l app.kubernetes.io/name=aap-lightspeed-chatbot-api \
+  -o jsonpath='{range .items[0].spec.containers[*]}{.name}{"\n"}{end}'
+# Expected: ansible-chatbot, ansible-mcp-controller, ansible-mcp-lightspeed
+```
+
+### 25.7 Usage
+
+1. Log in to AAP Gateway: https://aap-aap.apps.ocp.karaoren.eu
+2. Click the **Lightspeed assistant icon** (top-right corner of the toolbar)
+3. Ask questions in natural language, e.g.:
+   - "What job templates do I have?"
+   - "Show me failed jobs from last week"
+   - "How do I configure Vault credential lookups?"
+   - "List my inventories and their hosts"
+
+### 25.8 Changing the LLM Model
+
+To switch to a different LLM model or provider, create a **new** secret with a different name (do NOT edit the existing one — the operator won't detect in-place changes):
+
+```bash
+oc create secret generic chatbot-config-new -n aap \
+  --from-literal=chatbot_model=gpt-4o-mini \
+  --from-literal=chatbot_url=https://api.openai.com/v1 \
+  --from-literal=chatbot_token='<api-key>' \
+  --from-literal=chatbot_llm_provider_type=openai \
+  --from-literal=aap_gateway_url=http://aap \
+  --from-literal=aap_controller_url=http://aap-controller-service
+
+# Update the CR to reference the new secret
+oc patch ansibleautomationplatform aap -n aap --type=merge \
+  -p '{"spec":{"lightspeed":{"chatbot_config_secret_name":"chatbot-config-new"}}}'
+```
+
+### 25.9 Vault Secret
+
+| Vault Path | Keys |
+|------------|------|
+| `secret/aap/lightspeed` | `openai_api_key`, `model`, `provider`, `url`, `secret_name` |
+
+### 25.10 References
+
+- [Red Hat Documentation: Deploying Ansible Lightspeed Intelligent Assistant](https://docs.redhat.com/en/documentation/red_hat_ansible_automation_platform/2.6/html/installing_on_openshift_container_platform/deploying-chatbot-operator)

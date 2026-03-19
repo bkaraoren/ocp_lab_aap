@@ -16,3 +16,9 @@ spec:
     file_storage_storage_class: nfs-csi
     file_storage_access_mode: ReadWriteMany
     file_storage_size: 10Gi
+  lightspeed:
+    disabled: false
+    chatbot_config_secret_name: chatbot-configuration-secret
+  mcp:
+    disabled: false
+    allow_write_operations: true
