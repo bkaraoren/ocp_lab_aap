@@ -1,0 +1,155 @@
+---
+# =============================================================================
+# Alhambra Ticket Checker - Test Run
+# =============================================================================
+# Triggers a one-off test run of the Alhambra ticket checker on OCP.
+# Creates a Kubernetes Job, follows its logs, and reports the result.
+#
+# AAP usage:
+#   Launch via Job Template "Alhambra Checker - Test Run"
+#   Optional extra_vars:
+#     target_date: "2026-03-31"     (override date to check)
+#     run_duration: "60"            (seconds to run, default 60)
+#     check_interval: "30"          (seconds between checks)
+# =============================================================================
+- name: Alhambra Checker - Test Run
+  hosts: localhost
+  gather_facts: true
+
+  vars:
+    namespace: alhambra-checker
+    job_name: "alhambra-test-{{ ansible_date_time.epoch }}"
+    image: "image-registry.openshift-image-registry.svc:5000/alhambra-checker/alhambra-checker:latest"
+    target_date: "2026-03-31"
+    run_duration: "60"
+    check_interval: "30"
+
+  pre_tasks:
+    - name: Login to OCP using injected K8s credential (AAP EE)
+      ansible.builtin.shell: |
+        oc login "{{ lookup('env', 'K8S_AUTH_HOST') }}" \
+          --token="{{ lookup('env', 'K8S_AUTH_API_KEY') }}" \
+          --insecure-skip-tls-verify=true
+      when: lookup('env', 'K8S_AUTH_API_KEY') | length > 0
+      no_log: true
+      changed_when: false
+
+    - name: Verify OCP authentication
+      ansible.builtin.command: oc whoami
+      register: oc_user
+      changed_when: false
+
+    - name: Show context
+      ansible.builtin.debug:
+        msg: "Logged in as {{ oc_user.stdout }} | Target: {{ target_date }} | Duration: {{ run_duration }}s"
+
+  tasks:
+    - name: Create test Job
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: "{{ job_name }}"
+            namespace: "{{ namespace }}"
+          spec:
+            activeDeadlineSeconds: 300
+            backoffLimit: 0
+            template:
+              spec:
+                restartPolicy: Never
+                securityContext:
+                  runAsNonRoot: true
+                  seccompProfile:
+                    type: RuntimeDefault
+                containers:
+                  - name: checker
+                    image: "{{ image }}"
+                    securityContext:
+                      allowPrivilegeEscalation: false
+                      capabilities:
+                        drop: ["ALL"]
+                    resources:
+                      requests:
+                        cpu: 500m
+                        memory: 1Gi
+                      limits:
+                        cpu: "2"
+                        memory: 2Gi
+                    env:
+                      - name: TARGET_DATE
+                        value: "{{ target_date }}"
+                      - name: CHECK_INTERVAL_SECONDS
+                        value: "{{ check_interval }}"
+                      - name: RUN_DURATION_SECONDS
+                        value: "{{ run_duration }}"
+                    envFrom:
+                      - secretRef:
+                          name: alhambra-checker
+
+    - name: Wait for Job pod to start
+      ansible.builtin.shell: |
+        for i in $(seq 1 30); do
+          POD=$(oc get pods -n {{ namespace }} -l job-name={{ job_name }} -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+          if [ -n "$POD" ]; then
+            STATUS=$(oc get pod "$POD" -n {{ namespace }} -o jsonpath='{.status.phase}' 2>/dev/null)
+            if [ "$STATUS" != "Pending" ]; then
+              echo "$POD"
+              exit 0
+            fi
+          fi
+          sleep 5
+        done
+        echo "TIMEOUT"
+        exit 1
+      register: pod_name
+      changed_when: false
+
+    - name: Wait for Job to complete
+      kubernetes.core.k8s_info:
+        api_version: batch/v1
+        kind: Job
+        name: "{{ job_name }}"
+        namespace: "{{ namespace }}"
+      register: job_status
+      until: >-
+        (job_status.resources[0].status.succeeded | default(0) | int > 0) or
+        (job_status.resources[0].status.failed | default(0) | int > 0)
+      retries: 40
+      delay: 15
+
+    - name: Get Job logs
+      ansible.builtin.command: >
+        oc logs -n {{ namespace }} job/{{ job_name }}
+      register: job_logs
+      changed_when: false
+
+    - name: Display Job logs
+      ansible.builtin.debug:
+        msg: "{{ job_logs.stdout }}"
+
+    - name: Determine result
+      ansible.builtin.set_fact:
+        job_succeeded: "{{ job_status.resources[0].status.succeeded | default(0) | int > 0 }}"
+
+    - name: Report result
+      ansible.builtin.debug:
+        msg: >-
+          Job {{ job_name }} {{ 'SUCCEEDED' if job_succeeded else 'FAILED' }}.
+          Check logs above for details.
+
+    - name: Clean up test Job
+      kubernetes.core.k8s:
+        state: absent
+        api_version: batch/v1
+        kind: Job
+        name: "{{ job_name }}"
+        namespace: "{{ namespace }}"
+        delete_options:
+          propagationPolicy: Background
+
+    - name: Fail playbook if Job failed
+      ansible.builtin.fail:
+        msg: "Alhambra checker test Job failed. See logs above."
+      when: not job_succeeded

@@ -1,0 +1,39 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: alhambra-test
+  namespace: alhambra-checker
+spec:
+  activeDeadlineSeconds: 300
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: checker
+          image: image-registry.openshift-image-registry.svc:5000/alhambra-checker/alhambra-checker:latest
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          env:
+            - name: TARGET_DATE
+              value: "2026-03-31"
+            - name: CHECK_INTERVAL_SECONDS
+              value: "30"
+            - name: RUN_DURATION_SECONDS
+              value: "60"
+          envFrom:
+            - secretRef:
+                name: alhambra-checker
