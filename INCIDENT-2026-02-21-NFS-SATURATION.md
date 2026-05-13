@@ -6,6 +6,7 @@
 **Date:** February 21, 2026  
 **Duration:** ~3 days (Feb 18 -- Feb 21)  
 **Severity:** Critical  
+**Follow-up:** May 13, 2026 (memory limits applied)  
 
 ---
 
@@ -275,7 +276,81 @@ spec:
             summary: "High number of D-state processes, possible NFS hang"
 ```
 
-### 5.4 Consider Replacing In-Cluster NFS
+### 5.4 Set Memory Limits on AAP Hub Pods (Applied May 13, 2026)
+
+The AAP Hub pods (`aap-hub-api`, `aap-hub-content` x2) had **no memory limits**, allowing unbounded page cache growth from NFS I/O. After the NFS recovery, these pods grew to ~51 GB each (~153 GB total), triggering the `HighOverallControlPlaneMemory` alert.
+
+#### Investigation: HighOverallControlPlaneMemory Alert
+
+The alert fires when `(1 - (MemFree + Buffers + Cached) / MemTotal) * 100 > 60` for 1 hour. On the node:
+
+| Metric | Value |
+|--------|-------|
+| MemTotal | 251.6 GB |
+| MemFree | 2.5 GB |
+| Cached | 48.4 GB |
+| SReclaimable (slab) | 153.9 GB |
+| MemAvailable | 202.4 GB |
+| **Alert formula result** | **~79.7%** (threshold: 60%) |
+
+The alert formula does not count `SReclaimable` as free. The 153.9 GB of reclaimable slab was dominated by **693 million dentry cache entries (~126 GB)** from Pulpcore's NFS filesystem operations. The memory was safely reclaimable by the kernel under pressure, but the alert formula flagged it.
+
+The three AAP Hub pods consuming ~51 GB each had only 512Mi requests and **no limits**:
+
+| Pod | Actual Usage | Request | Limit |
+|-----|-------------|---------|-------|
+| aap-hub-api | 51,042 Mi | 512Mi | none |
+| aap-hub-content (x2) | ~51,000 Mi each | 512Mi | none |
+| aap-hub-web | ~512 Mi | 512Mi | none |
+| aap-hub-worker (x2) | ~512 Mi | 512Mi | none |
+
+#### Fix: Set Memory Limits via AutomationHub CR
+
+```bash
+oc patch automationhub aap-hub -n aap --type=merge -p '{
+  "spec": {
+    "api": {
+      "resource_requirements": {
+        "requests": { "memory": "512Mi" },
+        "limits": { "memory": "8Gi" }
+      }
+    },
+    "content": {
+      "resource_requirements": {
+        "requests": { "memory": "512Mi" },
+        "limits": { "memory": "8Gi" }
+      }
+    },
+    "web": {
+      "resource_requirements": {
+        "requests": { "memory": "256Mi" },
+        "limits": { "memory": "1Gi" }
+      }
+    },
+    "worker": {
+      "resource_requirements": {
+        "requests": { "memory": "512Mi" },
+        "limits": { "memory": "4Gi" }
+      }
+    }
+  }
+}'
+```
+
+The operator rolled out new pods automatically. With cgroup memory limits in place, the kernel reclaims page cache within each container's cgroup, preventing unbounded growth.
+
+#### Result After Applying Limits
+
+| Pod | Before | After | Limit |
+|-----|--------|-------|-------|
+| aap-hub-api | 51,042 Mi | 257 Mi | 8Gi |
+| aap-hub-content (x2) | ~51,000 Mi each | 221 Mi / 159 Mi | 8Gi |
+| aap-hub-web | ~512 Mi | 2 Mi | 1Gi |
+| aap-hub-worker (x2) | ~512 Mi each | 116 Mi each | 4Gi |
+
+All pods remained healthy with no OOM kills. The actual application memory (Python/Pulpcore processes) is well within the limits -- the previous 51 GB figures were almost entirely NFS page cache.
+
+### 5.5 Consider Replacing In-Cluster NFS
 
 The `registry.k8s.io/volume-nfs:0.8` image is a minimal, community NFS server not designed for production workloads. Alternatives:
 
