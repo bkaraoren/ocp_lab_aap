@@ -539,10 +539,103 @@ oc exec -n vault vault-0 -- vault operator unseal "<vault-unseal-key>"
 
 ## 6. OpenShift OAuth (Google/Red Hat SSO)
 
-### OAuth Configuration (existing)
+This cluster uses a single Google OAuth2 credential (Client ID + Client Secret) to provide "Red Hat SSO" authentication across OCP, AAP, and Vault. Google's `hostedDomain` restriction limits login to `@redhat.com` accounts only.
+
+```
+                    ┌──────────────────────────┐
+                    │  Google Cloud Console     │
+                    │  OAuth 2.0 Client ID      │
+                    │  (Web Application)        │
+                    └────────────┬─────────────┘
+                                 │
+                    Client ID + Client Secret
+                                 │
+              ┌──────────────────┼──────────────────┐
+              │                  │                   │
+              ▼                  ▼                   ▼
+     ┌────────────────┐ ┌───────────────┐  ┌──────────────┐
+     │ OCP OAuth      │ │ AAP Gateway   │  │ Vault OIDC   │
+     │ (RedHatSSO     │ │ (Google       │  │ (Google      │
+     │  identity      │ │  OAuth2       │  │  OIDC        │
+     │  provider)     │ │  plugin)      │  │  auth)       │
+     └────────────────┘ └───────────────┘  └──────────────┘
+```
+
+The credential is stored centrally in HashiCorp Vault at `secret/ocp/google-oauth` and distributed to services either via External Secrets Operator or manual configuration.
+
+### 6.1 Google Cloud Console: OAuth Consent Screen
+
+> Skip this step if the consent screen is already configured for your project.
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Select your project (or create a new one)
+3. Navigate to **APIs & Services** > **OAuth consent screen**
+4. Choose **Internal** (restricts to your Google Workspace org) or **External**
+5. Fill in the required fields:
+
+| Field | Value |
+|---|---|
+| App name | `OCP Lab karaoren.eu` (or any descriptive name) |
+| User support email | your `@redhat.com` email |
+| Authorized domains | `karaoren.eu` |
+| Developer contact email | your `@redhat.com` email |
+
+6. Under **Scopes**, add: `openid`, `email`, `profile`
+7. Click **Save and Continue**
+
+### 6.2 Google Cloud Console: Create OAuth2 Client ID
+
+1. Navigate to **APIs & Services** > **Credentials**
+2. Click **+ CREATE CREDENTIALS** > **OAuth client ID**
+3. Set the application type to **Web application**
+4. Set the name to something identifiable, e.g. `OCP karaoren.eu SSO`
+5. Under **Authorized redirect URIs**, add all callback URLs from the table below
+6. Click **Create**
+7. Save the displayed **Client ID** and **Client Secret**
+
+The Client ID looks like:
+
+```
+775961166307-rio3vds58fl05idalb7c7tbpqjr64vqi.apps.googleusercontent.com
+```
+
+### 6.3 Authorized Redirect URIs
+
+All services using this credential must have their callback URLs registered in the Google Cloud Console credential configuration:
+
+| Service | Redirect URI |
+|---|---|
+| OCP OAuth | `https://oauth-openshift.apps.ocp.karaoren.eu/oauth2callback/RedHatSSO` |
+| AAP Gateway | `https://aap-aap.apps.ocp.karaoren.eu/complete/google-oauth2/` |
+| Vault UI | `https://vault.apps.ocp.karaoren.eu/ui/vault/auth/oidc/oidc/callback` |
+| Vault CLI | `http://localhost:8250/oidc/callback` |
+| Grafana | `https://grafana-route-grafana.apps.ocp.karaoren.eu/login/generic_oauth` |
+
+> The OCP redirect URI suffix `RedHatSSO` must match the identity provider `name` field in the OAuth CR exactly (case-sensitive).
+
+### 6.4 Create the OCP Secret
+
+OpenShift OAuth references the Google client secret via a Kubernetes Secret in the `openshift-config` namespace:
+
+```bash
+oc create secret generic google-client-secret \
+  --from-literal=clientSecret="<your-client-secret>" \
+  -n openshift-config
+```
+
+### 6.5 Store the Credential in Vault
+
+```bash
+oc exec -n vault vault-0 -- sh -c \
+  "VAULT_TOKEN='<vault-root-token>' vault kv put secret/ocp/google-oauth \
+    client_id='<your-client-id>.apps.googleusercontent.com' \
+    client_secret='<your-client-secret>'"
+```
+
+### 6.6 OCP OAuth Configuration
 
 ```yaml
-# Current OAuth spec (oc get oauth cluster -o yaml)
+# File: gitops/cluster/oauth/oauth.yaml
 apiVersion: config.openshift.io/v1
 kind: OAuth
 metadata:
@@ -564,8 +657,71 @@ spec:
     google:
       clientID: <google-oauth-client-id>.apps.googleusercontent.com
       clientSecret:
-        name: <google-client-secret-name>
+        name: google-client-secret
       hostedDomain: redhat.com
+```
+
+| Field | Purpose |
+|---|---|
+| `name: RedHatSSO` | Display name on the OCP login page; also the suffix in the redirect URI |
+| `type: Google` | Uses Google's OAuth2 endpoints natively |
+| `hostedDomain: redhat.com` | Restricts login to `@redhat.com` Google Workspace accounts |
+| `clientSecret.name` | References the K8s Secret created in 6.4 |
+
+### 6.7 Verification
+
+```bash
+# Check the OAuth CR
+oc get oauth cluster -o jsonpath='{.spec.identityProviders[?(@.name=="RedHatSSO")]}' | python3 -m json.tool
+
+# Check the secret exists
+oc get secret google-client-secret -n openshift-config
+
+# Check authentication pods
+oc get pods -n openshift-authentication
+```
+
+Open the OCP console at `https://console-openshift-console.apps.ocp.karaoren.eu` — the **RedHatSSO** login option should be visible.
+
+### 6.8 Troubleshooting
+
+**"redirect_uri_mismatch" error:** The callback URL does not match what is registered in Google Cloud Console. Verify the identity provider name matches the URI suffix:
+
+```bash
+oc get oauth cluster -o jsonpath='{.spec.identityProviders[*].name}'
+```
+
+**"Access blocked: This app's request is invalid" (Error 400):** The OAuth consent screen may be in "Testing" mode. In Google Cloud Console, go to **APIs & Services** > **OAuth consent screen** and either add the user to the test users list or click **PUBLISH APP**.
+
+**Login page missing "RedHatSSO" option:**
+
+```bash
+oc get co authentication
+oc logs -n openshift-authentication deployment/oauth-openshift --tail=20
+```
+
+### 6.9 Secret Rotation
+
+When rotating the Google client secret:
+
+```bash
+# 1. Generate new secret in Google Cloud Console (Credentials > Edit > Add Secret)
+
+# 2. Update Vault
+oc exec -n vault vault-0 -- sh -c \
+  "VAULT_TOKEN='<root-token>' vault kv put secret/ocp/google-oauth \
+    client_id='<client-id>' client_secret='<new-secret>'"
+
+# 3. Update OCP secret
+oc create secret generic google-client-secret \
+  --from-literal=clientSecret="<new-secret>" \
+  -n openshift-config --dry-run=client -o yaml | oc apply -f -
+
+# 4. Restart OCP authentication pods
+oc rollout restart deployment/oauth-openshift -n openshift-authentication
+
+# 5. Update AAP authenticator (see section 7.2)
+# 6. Update Vault OIDC (see section 8.1)
 ```
 
 ---
@@ -575,7 +731,7 @@ spec:
 ### 7.1 OAuthClient for AAP Gateway
 
 ```yaml
-# File: aap-oauthclient.yaml
+# File: gitops/cluster/oauth/aap-oauthclient.yaml
 apiVersion: oauth.openshift.io/v1
 kind: OAuthClient
 metadata:
@@ -595,13 +751,12 @@ oc apply -f aap-oauthclient.yaml
 
 ### 7.2 AAP Gateway Authenticator (Google OAuth2)
 
-Configured via AAP Gateway API:
+Uses the same Google credential from [section 6.2](#62-google-cloud-console-create-oauth2-client-id). Configured via AAP Gateway API:
 
 ```bash
 AAP_GW_POD=$(oc get pods -n aap -l app.kubernetes.io/name=aap-gateway -o jsonpath='{.items[0].metadata.name}')
 ADMIN_PASS=$(oc get secret aap-admin-password -n aap -o jsonpath='{.data.password}' | base64 -d)
 
-# Create Google OAuth2 Authenticator
 oc exec -n aap ${AAP_GW_POD} -- curl -sk \
   -X POST \
   -H "Content-Type: application/json" \
@@ -624,7 +779,6 @@ oc exec -n aap ${AAP_GW_POD} -- curl -sk \
 ### 7.3 AAP Authenticator Map (Admin Access for bkaraore@redhat.com)
 
 ```bash
-# Create authenticator map to grant superuser access
 oc exec -n aap ${AAP_GW_POD} -- curl -sk \
   -X POST \
   -H "Content-Type: application/json" \
@@ -641,7 +795,6 @@ oc exec -n aap ${AAP_GW_POD} -- curl -sk \
     "revoke": true
   }'
 
-# Update trigger to match only bkaraore@redhat.com
 oc exec -n aap ${AAP_GW_POD} -- curl -sk \
   -X PATCH \
   -H "Content-Type: application/json" \
@@ -657,26 +810,23 @@ oc exec -n aap ${AAP_GW_POD} -- curl -sk \
   }'
 ```
 
-> **Google Cloud Console:** The AAP callback URL `https://aap-aap.apps.ocp.karaoren.eu/complete/google-oauth2/` must be registered as an authorized redirect URI.
-
 ---
 
 ## 8. Vault OIDC Authentication (Google)
 
+Uses the same Google credential from [section 6.2](#62-google-cloud-console-create-oauth2-client-id).
+
 ### 8.1 Enable and Configure OIDC
 
 ```bash
-# Enable OIDC auth method
 oc exec -n vault vault-0 -- vault auth enable oidc
 
-# Configure OIDC with Google
 oc exec -n vault vault-0 -- vault write auth/oidc/config \
   oidc_discovery_url="https://accounts.google.com" \
   oidc_client_id="<google-oauth-client-id>.apps.googleusercontent.com" \
   oidc_client_secret="<google-client-secret>" \
   default_role="redhat-user"
 
-# Create OIDC role for Red Hat users (admin for bkaraore@redhat.com only)
 oc exec -n vault vault-0 -- vault write auth/oidc/role/redhat-user \
   bound_audiences="<google-oauth-client-id>.apps.googleusercontent.com" \
   allowed_redirect_uris="https://vault.apps.ocp.karaoren.eu/ui/vault/auth/oidc/oidc/callback" \
@@ -686,8 +836,6 @@ oc exec -n vault vault-0 -- vault write auth/oidc/role/redhat-user \
   oidc_scopes="openid,email,profile" \
   bound_claims='{"hd":"redhat.com","email":"bkaraore@redhat.com"}'
 ```
-
-> **Google Cloud Console:** The Vault callback URL `https://vault.apps.ocp.karaoren.eu/ui/vault/auth/oidc/oidc/callback` must be registered as an authorized redirect URI.
 
 ---
 
